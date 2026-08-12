@@ -355,6 +355,15 @@ body {
   line-height: 1.8;
 }
 
+.credit-line {
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: rgba(179, 38, 53, 0.55);
+}
+
 .volume-controls {
   display: flex;
   flex-direction: column;

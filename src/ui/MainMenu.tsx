@@ -55,6 +55,8 @@ export function MainMenu() {
         <p>EAXF — mover &nbsp;·&nbsp; Mouse — olhar &nbsp;·&nbsp; Shift — correr</p>
         <p>G — interagir (portas) &nbsp;·&nbsp; P — pausar</p>
       </div>
+
+      <div className="credit-line">by ProgramDinho</div>
     </div>
   )
 }

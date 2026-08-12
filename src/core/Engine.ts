@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { AudioManager } from './AudioManager'
 import { CollisionSystem } from './CollisionSystem'
 import { InputManager } from './InputManager'
+import { preloadEnemySprites } from './SpriteLoader'
 import { LIGHTING_CONFIG } from './lighting.config'
 import { ParticleSystem } from './ParticleSystem'
 import { computeSplashDamage } from './splash'
@@ -12,7 +13,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import type { Enemy } from '../entities/Enemy'
 import type { EnemyWorld } from '../entities/Enemy'
-import { createEnemy, ENEMY_TYPES } from '../entities/EnemyTypes'
+import { createEnemy, ENEMY_SPRITE_URLS, ENEMY_TYPES } from '../entities/EnemyTypes'
 import { Pickup } from '../entities/Pickup'
 import { PICKUP_CONFIG } from '../entities/pickup.config'
 import { Player } from '../entities/Player'
@@ -253,6 +254,9 @@ export class Engine {
       },
       fog: this.scene.fog ? 'ligado' : 'desligado',
     })
+
+    // Pré-carrega os sprites dos inimigos (chroma key) antes do primeiro nível.
+    void preloadEnemySprites(ENEMY_SPRITE_URLS)
 
     // Post-processing: bloom + vinheta.
     this.composer = new EffectComposer(this.renderer)

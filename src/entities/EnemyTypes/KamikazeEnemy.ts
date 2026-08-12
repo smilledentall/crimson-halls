@@ -59,6 +59,11 @@ export class KamikazeEnemy extends Enemy {
       material.emissive.setHex(0xff2200)
       material.emissiveIntensity = emissive
     }
+    if (this.spriteMaterial) {
+      // Sprite: pulsa "quente" (vermelho intenso) conforme a proximidade.
+      const hot = pulse * intensity
+      this.spriteMaterial.color.setRGB(1, Math.max(0.35, 1 - hot), Math.max(0.35, 1 - hot))
+    }
     this.mesh.scale.setScalar(1 + pulse * 0.2 * intensity)
   }
 

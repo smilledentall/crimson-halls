@@ -3,6 +3,11 @@ import { BossEnemy } from './BossEnemy'
 import { RangedEnemy } from './RangedEnemy'
 import { KamikazeEnemy } from './KamikazeEnemy'
 import { TankEnemy } from './TankEnemy'
+import chaserSprite from '../../assets/sprites/Chaser.jpeg'
+import rangedSprite from '../../assets/sprites/Ranged.jpeg'
+import kamikazeSprite from '../../assets/sprites/Kamikaze.jpeg'
+import tankSprite from '../../assets/sprites/Tanque.jpeg'
+import bossSprite from '../../assets/sprites/Boss-Thane.jpeg'
 
 /**
  * Catálogo de variações de inimigo. Cada tipo é um conjunto de dados;
@@ -33,7 +38,18 @@ export interface EnemyTypeDefinition {
   color?: number
   /** Núcleos ganhos ao abater este tipo. */
   reward: number
+  /** URL do sprite billboard (fundo verde removido no carregamento). */
+  sprite?: string
 }
+
+/** URLs de todos os sprites de inimigo (pré-carregados pela engine). */
+export const ENEMY_SPRITE_URLS: string[] = [
+  chaserSprite,
+  rangedSprite,
+  kamikazeSprite,
+  tankSprite,
+  bossSprite,
+]
 
 export const ENEMY_TYPES: EnemyTypeDefinition[] = [
   {
@@ -48,6 +64,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     retreatRange: 0,
     ranged: false,
     reward: 3,
+    sprite: chaserSprite,
   },
   {
     id: 'shooter',
@@ -61,6 +78,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     retreatRange: 8,
     ranged: true,
     reward: 4,
+    sprite: rangedSprite,
   },
   {
     id: 'kamikaze',
@@ -79,6 +97,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     meshScale: 0.75,
     color: 0xd4344a,
     reward: 2,
+    sprite: kamikazeSprite,
   },
   {
     id: 'tank',
@@ -96,6 +115,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     meshScale: 1.5,
     color: 0x4a4a52,
     reward: 6,
+    sprite: tankSprite,
   },
   {
     id: 'boss',
@@ -111,6 +131,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     meshScale: 2.4,
     color: 0x6a2430,
     reward: 20,
+    sprite: bossSprite,
   },
 ]
 

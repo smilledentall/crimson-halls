@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { CollisionSystem } from '../core/CollisionSystem'
+import { getSpriteEntry } from '../core/SpriteLoader'
 import type { EnemyTypeDefinition } from './EnemyTypes'
 
 export type EnemyState = 'idle' | 'chasing' | 'attacking' | 'retreating' | 'dead'
@@ -49,6 +50,8 @@ export class Enemy {
 
   protected readonly bodyMaterials: THREE.MeshStandardMaterial[] = []
   protected readonly scaleFactor: number
+  /** Material do sprite billboard (quando o tipo tem imagem). */
+  protected spriteMaterial: THREE.SpriteMaterial | null = null
   protected flashTimer = 0
   protected attackCooldown = 0
   protected deathTimer = 0
@@ -80,11 +83,35 @@ export class Enemy {
     this.hitMesh.userData.enemy = this
     this.mesh.add(this.hitMesh)
 
-    this.buildSilhouette(scale)
+    this.buildBody(scale)
     this.buildHealthBar(scale)
     this.mesh.userData.enemy = this
     this.position = this.mesh.position
     this.mesh.position.set(x, 0, z)
+  }
+
+  /** Corpo: sprite billboard (se o tipo tem imagem) ou geometria composta. */
+  private buildBody(scale: number): void {
+    const spriteUrl = this.type.sprite
+    if (spriteUrl) {
+      const entry = getSpriteEntry(spriteUrl)
+      const material = new THREE.SpriteMaterial({
+        map: entry?.texture ?? null,
+        transparent: true,
+        depthWrite: false,
+        color: 0xffffff,
+      })
+      this.spriteMaterial = material
+      // Altura do sprite proporcional ao meshScale (Tanque/Boss visivelmente maiores).
+      const height = 2.0 * scale
+      const width = height * (entry?.aspect ?? 1)
+      const sprite = new THREE.Sprite(material)
+      sprite.center.set(0.5, 0) // ancora pelo pé (embaixo, no chão)
+      sprite.scale.set(width, height, 1)
+      this.mesh.add(sprite)
+    } else {
+      this.buildSilhouette(scale)
+    }
   }
 
   /** Cria um material registrado no flash: as sub-meshes usam `makeMaterial`. */
@@ -146,8 +173,9 @@ export class Enemy {
     this.mesh.add(leftLeg, rightLeg)
   }
 
-  /** Barra de vida (Sprite) acima da cabeça. Sem DOM (testes) não cria. */
+  /** Barra de vida (Sprite) acima da cabeça. Sem DOM (testes) ou chefe não cria. */
   private buildHealthBar(scale: number): void {
+    if (this.type.id === 'boss') return // chefe usa a barra fixa no topo
     if (typeof document === 'undefined') return
     const canvas = document.createElement('canvas')
     canvas.width = BAR_WIDTH
@@ -214,8 +242,14 @@ export class Enemy {
     this.deathTimer = DEATH_DURATION
   }
 
-  private setEmissive(color: number): void {
-    for (const material of this.bodyMaterials) material.emissive.setHex(color)
+  /** Flash de dano: emissivo nas geometrias e tint vermelho no sprite. */
+  private setDamageFlash(active: boolean): void {
+    for (const material of this.bodyMaterials) {
+      material.emissive.setHex(active ? 0xff2222 : 0x000000)
+    }
+    if (this.spriteMaterial) {
+      this.spriteMaterial.color.setHex(active ? 0xff5555 : 0xffffff)
+    }
   }
 
   update(dt: number, world: EnemyWorld): void {
@@ -233,12 +267,16 @@ export class Enemy {
 
     if (this.state === 'dead') {
       this.deathTimer -= dt
-      // Ragdoll simples: o corpo cai pra frente em torno da base e afunda um pouco.
+      // Morte: sprite dissolve/afunda; geometria cai pra frente.
       const progress = 1 - Math.max(0, this.deathTimer / DEATH_DURATION)
       const eased = 1 - (1 - progress) * (1 - progress)
-      this.mesh.rotation.x = eased * (Math.PI / 2)
-      this.mesh.position.y = -eased * 0.1
-      this.setEmissive(0xff0000)
+      this.mesh.rotation.x = this.spriteMaterial ? 0 : eased * (Math.PI / 2)
+      this.mesh.position.y = -eased * 0.25
+      if (this.spriteMaterial) {
+        this.spriteMaterial.opacity = 1 - eased
+      } else {
+        this.setDamageFlash(true)
+      }
       return
     }
 
@@ -279,7 +317,7 @@ export class Enemy {
     this.mesh.rotation.y = Math.atan2(dx, dz)
 
     // Flash vermelho ao levar dano (em todas as partes do corpo).
-    this.setEmissive(this.flashTimer > 0 ? 0xff2222 : 0x000000)
+    this.setDamageFlash(this.flashTimer > 0)
   }
 
   /** Move na direção do jogador (1) ou para longe dele (-1), deslizando nas paredes. */
@@ -339,5 +377,7 @@ export class Enemy {
     })
     this.barTexture?.dispose()
     this.barMaterial?.dispose()
+    // O material do corpo é do inimigo; a textura é compartilhada (cache) — não descarta.
+    this.spriteMaterial?.dispose()
   }
 }

@@ -235,5 +235,10 @@ export class BossEnemy extends Enemy {
       material.emissive.setHex(0xffffff)
       material.emissiveIntensity = 0.6 + pulse
     }
+    if (this.spriteMaterial) {
+      // Sprite: brilha quente (branco-amarelado) durante a telegrafia.
+      this.spriteMaterial.color.setRGB(1, 0.85, 0.6)
+    }
+    this.mesh.scale.setScalar(1 + pulse * 0.05)
   }
 }
