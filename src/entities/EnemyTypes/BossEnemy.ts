@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import { Enemy } from '../Enemy'
-import type { EnemyWorld } from '../Enemy'
+import type { CombatModifiers, EnemyWorld } from '../Enemy'
 import type { EnemyTypeDefinition } from '.'
+import { ENEMY_SPAWN_MULTIPLIER } from '../../state/progression.config'
 
 const RANGED_RANGE = 24
 const PROJECTILE_DAMAGE = 12
@@ -25,8 +26,14 @@ export class BossEnemy extends Enemy {
   private rangedCooldown = 1.2
   private summonTimer = 8
 
-  constructor(type: EnemyTypeDefinition, x: number, z: number, healthMultiplier = 1) {
-    super(type, x, z, healthMultiplier)
+  constructor(
+    type: EnemyTypeDefinition,
+    x: number,
+    z: number,
+    healthMultiplier = 1,
+    combat: CombatModifiers = {},
+  ) {
+    super(type, x, z, healthMultiplier, combat)
   }
 
   protected buildSilhouette(scale: number): void {
@@ -169,7 +176,7 @@ export class BossEnemy extends Enemy {
       const action: BossAction = this.phase >= 3 ? 'volley' : this.phase === 2 ? 'fan' : 'shot'
       this.teleTime = TELEGRAPH_DURATION
       this.pendingAction = action
-      this.rangedCooldown = this.phase >= 2 ? 1.6 : 2.4
+      this.rangedCooldown = (this.phase >= 2 ? 1.6 : 2.4) * this.attackIntervalMultiplier
     }
   }
 
@@ -219,7 +226,7 @@ export class BossEnemy extends Enemy {
     this.summonTimer -= dt
     if (this.summonTimer > 0) return
     this.summonTimer = this.phase >= 3 ? 8 : 11
-    const count = this.phase >= 3 ? 2 : 1
+    const count = (this.phase >= 3 ? 2 : 1) * ENEMY_SPAWN_MULTIPLIER
     for (let i = 0; i < count; i++) {
       const enemyType = this.phase >= 3 && i === 1 ? 'kamikaze' : 'chaser'
       const origin = this.position.clone()

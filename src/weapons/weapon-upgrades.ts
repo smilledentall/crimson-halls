@@ -8,23 +8,23 @@ export const MAX_WEAPON_UPGRADE_LEVEL = 3
 
 /** Custo em núcleos para cada nível (índice = nível atual, 0..2). */
 export const WEAPON_UPGRADE_COSTS: Record<WeaponId, number[]> = {
-  pistol: [15, 30, 60],
-  shotgun: [15, 30, 60],
-  rifle: [15, 30, 60],
-  rocket: [20, 40, 80],
-  chainsaw: [10, 20, 40],
+  pistol: [25, 50, 100],
+  shotgun: [25, 50, 100],
+  rifle: [25, 50, 100],
+  rocket: [35, 70, 140],
+  chainsaw: [12, 25, 50],
 }
 
 /** Bônus por nível de upgrade (conservadores; ajustáveis com playtesting). */
 export const WEAPON_UPGRADE_EFFECTS = {
-  /** +10% de dano por nível. */
-  damagePerLevel: 0.1,
-  /** +8% de cadência por nível. */
-  fireRatePerLevel: 0.08,
-  /** +25% de capacidade de munição por nível (armas com munição finita). */
-  capacityPerLevel: 0.25,
-  /** -12% de spread por nível (melhora a precisão). */
-  spreadPerLevel: 0.12,
+  /** +7% de dano por nível. */
+  damagePerLevel: 0.07,
+  /** +6% de cadência por nível. */
+  fireRatePerLevel: 0.06,
+  /** +20% de capacidade de munição por nível (armas com munição finita). */
+  capacityPerLevel: 0.2,
+  /** -10% de spread por nível (melhora a precisão). */
+  spreadPerLevel: 0.1,
 }
 
 /** Retorna a definição da arma com os upgrades aplicados (dados derivados). */

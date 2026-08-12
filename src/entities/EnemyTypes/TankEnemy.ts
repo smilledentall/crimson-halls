@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { Enemy } from '../Enemy'
+import type { CombatModifiers } from '../Enemy'
 import type { EnemyTypeDefinition } from '.'
 
 /**
@@ -8,8 +9,14 @@ import type { EnemyTypeDefinition } from '.'
  * destaque extra (sprite maior via meshScale).
  */
 export class TankEnemy extends Enemy {
-  constructor(type: EnemyTypeDefinition, x: number, z: number, healthMultiplier = 1) {
-    super(type, x, z, healthMultiplier)
+  constructor(
+    type: EnemyTypeDefinition,
+    x: number,
+    z: number,
+    healthMultiplier = 1,
+    combat: CombatModifiers = {},
+  ) {
+    super(type, x, z, healthMultiplier, combat)
   }
 
   protected buildSilhouette(scale: number): void {

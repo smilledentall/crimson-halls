@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { Enemy } from '../Enemy'
-import type { EnemyWorld } from '../Enemy'
+import type { CombatModifiers, EnemyWorld } from '../Enemy'
 import type { EnemyTypeDefinition } from '.'
 
 const PULSE_RANGE = 8
@@ -14,8 +14,14 @@ const PULSE_RANGE = 8
 export class KamikazeEnemy extends Enemy {
   private elapsed = 0
 
-  constructor(type: EnemyTypeDefinition, x: number, z: number, healthMultiplier = 1) {
-    super(type, x, z, healthMultiplier)
+  constructor(
+    type: EnemyTypeDefinition,
+    x: number,
+    z: number,
+    healthMultiplier = 1,
+    combat: CombatModifiers = {},
+  ) {
+    super(type, x, z, healthMultiplier, combat)
   }
 
   protected buildSilhouette(scale: number): void {

@@ -12,7 +12,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import type { Enemy } from '../entities/Enemy'
-import type { EnemyWorld } from '../entities/Enemy'
+import type { CombatModifiers, EnemyWorld } from '../entities/Enemy'
 import { createEnemy, ENEMY_SPRITE_URLS, ENEMY_TYPES } from '../entities/EnemyTypes'
 import { Pickup } from '../entities/Pickup'
 import { PICKUP_CONFIG } from '../entities/pickup.config'
@@ -28,6 +28,7 @@ import type { GamePhase } from '../state/gameStore'
 import { DIFFICULTIES } from '../state/difficulty.config'
 import {
   CURRENCY_PER_LEVEL_CLEAR,
+  ENEMY_SPAWN_MULTIPLIER,
   REGEN_INTERVAL_SECONDS,
   SKILL_POINT_PER_LEVEL_CLEAR,
 } from '../state/progression.config'
@@ -655,7 +656,7 @@ export class Engine {
         if (this.activeSummons >= 6) return
         const type = ENEMY_TYPES.find(t => t.id === enemyType) ?? ENEMY_TYPES[0]
         const healthMult = DIFFICULTIES[useGameStore.getState().difficulty].enemyHealth
-        const enemy = createEnemy(type, origin.x, origin.z, healthMult)
+        const enemy = createEnemy(type, origin.x, origin.z, healthMult, this.enemyCombatModifiers())
         this.enemies.push(enemy)
         this.scene?.add(enemy.mesh)
         this.activeSummons++
@@ -780,7 +781,9 @@ export class Engine {
     while (this.pendingWaves.length > 0 && this.pendingWaves[0].delay <= this.waveTime) {
       const wave = this.pendingWaves.shift()
       if (!wave) break
-      for (let i = 0; i < wave.count; i++) this.spawnWaveEnemy(wave.enemyType)
+      for (let i = 0; i < wave.count * ENEMY_SPAWN_MULTIPLIER; i++) {
+        this.spawnWaveEnemy(wave.enemyType)
+      }
     }
   }
 
@@ -795,7 +798,7 @@ export class Engine {
     const z = point.z + (Math.random() * 2 - 1) * jitter
     const type = ENEMY_TYPES.find(t => t.id === enemyType) ?? ENEMY_TYPES[0]
     const healthMult = DIFFICULTIES[useGameStore.getState().difficulty].enemyHealth
-    const enemy = createEnemy(type, x, z, healthMult)
+    const enemy = createEnemy(type, x, z, healthMult, this.enemyCombatModifiers())
     this.enemies.push(enemy)
     this.scene.add(enemy.mesh)
     this.spawnedEnemyCount++
@@ -1346,16 +1349,20 @@ export class Engine {
     })
 
     // Spawn de inimigos (a fábrica escolhe a classe certa por tipo).
+    // O multiplicador global aumenta a densidade (o "dobro"); o boss é único.
     const difficulty = useGameStore.getState().difficulty
     const enemyHealthMult = DIFFICULTIES[difficulty].enemyHealth
     const waveIntervalMult = DIFFICULTIES[difficulty].waveIntervalMultiplier
+    const waveCountTotal = (parsed.waves ?? []).reduce((sum, wave) => sum + wave.count, 0)
+    const bossCount = parsed.enemySpawns.filter(s => s.enemyType === 'boss').length
+    const gridCount = parsed.enemySpawns.length
     this.spawnedEnemyCount = 0
     this.waveTime = 0
     this.pendingWaves = [...(parsed.waves ?? [])]
       .map(wave => ({ ...wave, delay: wave.delay * waveIntervalMult }))
       .sort((a, b) => a.delay - b.delay)
     this.totalEnemiesToSpawn =
-      parsed.enemySpawns.length + (parsed.waves ?? []).reduce((sum, wave) => sum + wave.count, 0)
+      (gridCount - bossCount) * ENEMY_SPAWN_MULTIPLIER + bossCount + waveCountTotal * ENEMY_SPAWN_MULTIPLIER
     // Setor começa "não limpo": portas trancadas até zerar os inimigos.
     this.levelCleared = false
     this.boss = null
@@ -1369,11 +1376,23 @@ export class Engine {
     useGameStore.getState().setBossBar(null)
     for (const spawn of parsed.enemySpawns) {
       const type = ENEMY_TYPES.find(t => t.id === spawn.enemyType) ?? ENEMY_TYPES[0]
-      const enemy = createEnemy(type, spawn.x, spawn.z, enemyHealthMult)
-      this.enemies.push(enemy)
-      this.scene.add(enemy.mesh)
-      this.spawnedEnemyCount++
-      if (type.id === 'boss') this.boss = enemy
+      const dupCount = type.id === 'boss' ? 1 : ENEMY_SPAWN_MULTIPLIER
+      for (let dup = 0; dup < dupCount; dup++) {
+        // Deslocamento para os duplicados não nascerem sobrepostos.
+        const offsetX = dup === 0 ? 0 : dup % 2 === 0 ? -1.4 : 1.4
+        const offsetZ = dup === 1 ? 1.4 : 0
+        const enemy = createEnemy(
+          type,
+          spawn.x + offsetX,
+          spawn.z + offsetZ,
+          enemyHealthMult,
+          this.enemyCombatModifiers(),
+        )
+        this.enemies.push(enemy)
+        this.scene.add(enemy.mesh)
+        this.spawnedEnemyCount++
+        if (type.id === 'boss' && dup === 0) this.boss = enemy
+      }
     }
 
     // Spawn de pickups.
@@ -1446,6 +1465,16 @@ export class Engine {
 
     // Zera o gatilho das armas ao trocar de nível.
     for (const weapon of Object.values(this.weapons)) weapon?.setTriggerHeld(false)
+  }
+
+  /** Modificadores de combate dos inimigos conforme a dificuldade. */
+  private enemyCombatModifiers(): CombatModifiers {
+    const difficulty = DIFFICULTIES[useGameStore.getState().difficulty]
+    return {
+      speedMultiplier: difficulty.enemySpeedMultiplier,
+      attackIntervalMultiplier: difficulty.enemyAttackIntervalMultiplier,
+      spreadMultiplier: difficulty.enemySpreadMultiplier,
+    }
   }
 
   /** Monta o objeto 3D de uma porta (marco + plano luminoso + label). */

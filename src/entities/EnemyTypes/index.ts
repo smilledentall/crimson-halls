@@ -1,4 +1,5 @@
 import { Enemy } from '../Enemy'
+import type { CombatModifiers } from '../Enemy'
 import { BossEnemy } from './BossEnemy'
 import { RangedEnemy } from './RangedEnemy'
 import { KamikazeEnemy } from './KamikazeEnemy'
@@ -40,6 +41,8 @@ export interface EnemyTypeDefinition {
   reward: number
   /** URL do sprite billboard (fundo verde removido no carregamento). */
   sprite?: string
+  /** Altura do sprite em unidades de mundo (padrão = 2.0 × meshScale). */
+  spriteHeight?: number
 }
 
 /** URLs de todos os sprites de inimigo (pré-carregados pela engine). */
@@ -65,6 +68,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     ranged: false,
     reward: 3,
     sprite: chaserSprite,
+    spriteHeight: 2.0,
   },
   {
     id: 'shooter',
@@ -79,6 +83,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     ranged: true,
     reward: 4,
     sprite: rangedSprite,
+    spriteHeight: 2.1,
   },
   {
     id: 'kamikaze',
@@ -98,6 +103,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     color: 0xd4344a,
     reward: 2,
     sprite: kamikazeSprite,
+    spriteHeight: 1.6,
   },
   {
     id: 'tank',
@@ -116,6 +122,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     color: 0x4a4a52,
     reward: 6,
     sprite: tankSprite,
+    spriteHeight: 2.7,
   },
   {
     id: 'boss',
@@ -132,6 +139,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     color: 0x6a2430,
     reward: 20,
     sprite: bossSprite,
+    spriteHeight: 2.85,
   },
 ]
 
@@ -141,10 +149,11 @@ export function createEnemy(
   x: number,
   z: number,
   healthMultiplier = 1,
+  combat: CombatModifiers = {},
 ): Enemy {
-  if (type.id === 'boss') return new BossEnemy(type, x, z, healthMultiplier)
-  if (type.id === 'kamikaze') return new KamikazeEnemy(type, x, z, healthMultiplier)
-  if (type.id === 'tank') return new TankEnemy(type, x, z, healthMultiplier)
-  if (type.ranged) return new RangedEnemy(type, x, z, healthMultiplier)
-  return new Enemy(type, x, z, healthMultiplier)
+  if (type.id === 'boss') return new BossEnemy(type, x, z, healthMultiplier, combat)
+  if (type.id === 'kamikaze') return new KamikazeEnemy(type, x, z, healthMultiplier, combat)
+  if (type.id === 'tank') return new TankEnemy(type, x, z, healthMultiplier, combat)
+  if (type.ranged) return new RangedEnemy(type, x, z, healthMultiplier, combat)
+  return new Enemy(type, x, z, healthMultiplier, combat)
 }

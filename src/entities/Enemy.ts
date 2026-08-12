@@ -25,6 +25,15 @@ const FLASH_DURATION = 0.1
 const BAR_VISIBLE_TIME = 3
 const BAR_WIDTH = 128
 const BAR_HEIGHT = 12
+/** Altura máxima do sprite: cabe sob o teto (WALL_HEIGHT 3.2) com margem. */
+const MAX_SPRITE_HEIGHT = 2.9
+
+/** Modificadores de combate aplicados pela dificuldade ao spawnar. */
+export interface CombatModifiers {
+  speedMultiplier?: number
+  attackIntervalMultiplier?: number
+  spreadMultiplier?: number
+}
 
 /**
  * Inimigo base: IA de perseguição + ataque corpo a corpo.
@@ -55,6 +64,10 @@ export class Enemy {
   protected flashTimer = 0
   protected attackCooldown = 0
   protected deathTimer = 0
+  /** Multiplicadores de combate (definidos pela dificuldade no spawn). */
+  speedMultiplier = 1
+  attackIntervalMultiplier = 1
+  spreadMultiplier = 1
 
   private barSprite: THREE.Sprite | null = null
   private barMaterial: THREE.SpriteMaterial | null = null
@@ -65,10 +78,19 @@ export class Enemy {
   private barTimer = 0
   private barOpacity = 0
 
-  constructor(type: EnemyTypeDefinition, x: number, z: number, healthMultiplier = 1) {
+  constructor(
+    type: EnemyTypeDefinition,
+    x: number,
+    z: number,
+    healthMultiplier = 1,
+    combat: CombatModifiers = {},
+  ) {
     this.type = type
     this.health = Math.max(1, Math.round(type.health * healthMultiplier))
     this.maxHealth = this.health
+    this.speedMultiplier = combat.speedMultiplier ?? 1
+    this.attackIntervalMultiplier = combat.attackIntervalMultiplier ?? 1
+    this.spreadMultiplier = combat.spreadMultiplier ?? 1
 
     const scale = type.meshScale ?? 1
     this.scaleFactor = scale
@@ -102,8 +124,9 @@ export class Enemy {
         color: 0xffffff,
       })
       this.spriteMaterial = material
-      // Altura do sprite proporcional ao meshScale (Tanque/Boss visivelmente maiores).
-      const height = 2.0 * scale
+      // Altura do sprite por tipo (spriteHeight), limitada ao teto do nível
+      // para o inimigo não clipar a geometria. Tanque/Boss ficam maiores.
+      const height = Math.min(this.type.spriteHeight ?? 2.0 * scale, MAX_SPRITE_HEIGHT)
       const width = height * (entry?.aspect ?? 1)
       const sprite = new THREE.Sprite(material)
       sprite.center.set(0.5, 0) // ancora pelo pé (embaixo, no chão)
@@ -303,7 +326,7 @@ export class Enemy {
         this.state = 'attacking'
         if (this.attackCooldown <= 0) {
           this.performAttack(world)
-          this.attackCooldown = this.type.attackInterval
+          this.attackCooldown = this.type.attackInterval * this.attackIntervalMultiplier
         }
       } else {
         this.state = 'chasing'
@@ -329,7 +352,7 @@ export class Enemy {
     dt: number,
     world: EnemyWorld,
   ): void {
-    const step = directionMultiplier * this.type.speed * dt
+    const step = directionMultiplier * this.type.speed * this.speedMultiplier * dt
     const resolved = world.collision.resolvePosition(
       { x: this.position.x, z: this.position.z },
       { x: (dx / distance) * step, z: (dz / distance) * step },

@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { Enemy } from '../Enemy'
-import type { EnemyWorld } from '../Enemy'
+import type { CombatModifiers, EnemyWorld } from '../Enemy'
 import type { EnemyTypeDefinition } from '.'
 
 /**
@@ -9,8 +9,14 @@ import type { EnemyTypeDefinition } from '.'
  * Silhueta ereta/cautelosa com um "arma" saliente na frente do corpo.
  */
 export class RangedEnemy extends Enemy {
-  constructor(type: EnemyTypeDefinition, x: number, z: number, healthMultiplier = 1) {
-    super(type, x, z, healthMultiplier)
+  constructor(
+    type: EnemyTypeDefinition,
+    x: number,
+    z: number,
+    healthMultiplier = 1,
+    combat: CombatModifiers = {},
+  ) {
+    super(type, x, z, healthMultiplier, combat)
   }
 
   protected buildSilhouette(scale: number): void {
@@ -65,10 +71,15 @@ export class RangedEnemy extends Enemy {
   protected performAttack(world: EnemyWorld): void {
     const origin = this.position.clone()
     origin.y = 1.6 // altura do "cano"
+    const playerPos = world.playerPosition
+    // Aponta pro jogador com dispersão: menor spread = mais preciso (Difícil).
+    const baseAngle = Math.atan2(playerPos.x - origin.x, playerPos.z - origin.z)
+    const offset = (Math.random() * 2 - 1) * 0.12 * this.spreadMultiplier
+    const angle = baseAngle + offset
     const target = new THREE.Vector3(
-      world.playerPosition.x,
-      world.playerPosition.y,
-      world.playerPosition.z,
+      origin.x + Math.sin(angle) * 24,
+      playerPos.y,
+      origin.z + Math.cos(angle) * 24,
     )
     world.fireProjectile(origin, target, this.type.attackDamage)
   }

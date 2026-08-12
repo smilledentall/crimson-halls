@@ -34,13 +34,13 @@ describe('gameStore: dano, vida e munição', () => {
   it('dificuldade fácil reduz o dano recebido', () => {
     useGameStore.setState({ difficulty: 'easy' })
     useGameStore.getState().damage(20)
-    expect(useGameStore.getState().health).toBe(88) // 20 * 0.6 = 12
+    expect(useGameStore.getState().health).toBe(89) // 20 * 0.55 = 11
   })
 
   it('dificuldade difícil aumenta o dano recebido', () => {
     useGameStore.setState({ difficulty: 'hard' })
     useGameStore.getState().damage(20)
-    expect(useGameStore.getState().health).toBe(70) // 20 * 1.5 = 30
+    expect(useGameStore.getState().health).toBe(62) // 20 * 1.9 = 38
   })
 
   it('pickup de vida não passa do máximo', () => {
@@ -89,11 +89,11 @@ describe('gameStore: progressão (moeda, upgrades, habilidades)', () => {
   it('addCurrency soma e buyWeaponUpgrade gasta com custo crescente', () => {
     useGameStore.getState().addCurrency(100)
     expect(useGameStore.getState().currency).toBe(100)
-    useGameStore.getState().buyWeaponUpgrade('shotgun') // custo 15
-    expect(useGameStore.getState().currency).toBe(85)
+    useGameStore.getState().buyWeaponUpgrade('shotgun') // custo 25
+    expect(useGameStore.getState().currency).toBe(75)
     expect(useGameStore.getState().weaponUpgrades.shotgun).toBe(1)
-    useGameStore.getState().buyWeaponUpgrade('shotgun') // custo 30
-    expect(useGameStore.getState().currency).toBe(55)
+    useGameStore.getState().buyWeaponUpgrade('shotgun') // custo 50
+    expect(useGameStore.getState().currency).toBe(25)
     expect(useGameStore.getState().weaponUpgrades.shotgun).toBe(2)
   })
 

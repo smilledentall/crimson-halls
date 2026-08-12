@@ -2,6 +2,9 @@
  * Níveis de dificuldade — multiplicadores centralizados aplicados sobre os
  * valores já existentes (nenhuma lógica duplicada). O engine/store consultam
  * estas constantes.
+ *
+ * A dificuldade NÃO é só "esponja de dano": também altera comportamento
+ * (velocidade de perseguição, cooldown de ataque e precisão de atiradores).
  */
 export type DifficultyId = 'easy' | 'normal' | 'hard'
 
@@ -17,17 +20,26 @@ export interface DifficultyConfig {
   pickupAmmoMultiplier: number
   /** Multiplica os intervalos das ondas do nível 5 (maior = mais lento). */
   waveIntervalMultiplier: number
+  /** Multiplica a velocidade de perseguição dos inimigos. */
+  enemySpeedMultiplier: number
+  /** Multiplica o cooldown de ataque (<1 = atacam com mais frequência). */
+  enemyAttackIntervalMultiplier: number
+  /** Multiplica a dispersão dos tiros de atiradores (<1 = mais precisos). */
+  enemySpreadMultiplier: number
 }
 
 export const DIFFICULTIES: Record<DifficultyId, DifficultyConfig> = {
   easy: {
     id: 'easy',
     name: 'Fácil',
-    description: 'Menos dano recebido, inimigos mais fracos, mais munição e ondas mais lentas.',
-    playerDamageReceived: 0.6,
-    enemyHealth: 0.75,
-    pickupAmmoMultiplier: 1.5,
-    waveIntervalMultiplier: 1.5,
+    description: 'Inimigos lentos e imprecisos, menos dano recebido, mais munição.',
+    playerDamageReceived: 0.55,
+    enemyHealth: 0.8,
+    pickupAmmoMultiplier: 1.4,
+    waveIntervalMultiplier: 1.6,
+    enemySpeedMultiplier: 0.9,
+    enemyAttackIntervalMultiplier: 1.15,
+    enemySpreadMultiplier: 1.4,
   },
   normal: {
     id: 'normal',
@@ -37,15 +49,22 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultyConfig> = {
     enemyHealth: 1,
     pickupAmmoMultiplier: 1,
     waveIntervalMultiplier: 1,
+    enemySpeedMultiplier: 1,
+    enemyAttackIntervalMultiplier: 1,
+    enemySpreadMultiplier: 1,
   },
   hard: {
     id: 'hard',
     name: 'Difícil',
-    description: 'Mais dano recebido, inimigos resistentes, menos munição e ondas mais rápidas.',
-    playerDamageReceived: 1.5,
-    enemyHealth: 1.3,
-    pickupAmmoMultiplier: 0.6,
-    waveIntervalMultiplier: 0.7,
+    description:
+      'Inimigos velozes, agressivos e precisos, com muita vida; menos munição e dano recebido alto.',
+    playerDamageReceived: 1.9,
+    enemyHealth: 2.0,
+    pickupAmmoMultiplier: 0.5,
+    waveIntervalMultiplier: 0.6,
+    enemySpeedMultiplier: 1.15,
+    enemyAttackIntervalMultiplier: 0.8,
+    enemySpreadMultiplier: 0.6,
   },
 }
 
