@@ -2,10 +2,10 @@ import type { LevelDefinition } from '../LevelLoader'
 
 /**
  * Fase 5 (final da campanha): arena dedicada do chefe "O Thane de Crimson".
- * O boss ('B') SUBSTITUI as antigas ondas — a luta usa pilares de cobertura,
- * e o chefe invoca reforços nas fases 2/3. A porta traseira (D1, bossLocked)
- * fecha atrás do jogador até o chefe morrer; a morte do boss dispara a
- * vitória. A sala secreta (D2) abre com a válvula V1.
+ * O boss ('B') SUBSTITUI as antigas ondas. Ao derrotá-lo, as portas destravam:
+ * a traseira (D1, bossLocked) volta ao nível 4 e a sala secreta (D3) abre com
+ * a válvula V1. A vitória só dispara quando o jogador sai pela PORTA DE SAÍDA
+ * (D2 → level-victory), dando tempo de explorar o conteúdo antes de encerrar.
  */
 export const level5: LevelDefinition = {
   id: 'level-5',
@@ -13,8 +13,9 @@ export const level5: LevelDefinition = {
   atmosphere: { fogColor: 0x460c18, ambientColor: 0xd0a0b0, fogFar: 120 },
   doors: [
     { marker: 'D1', targetLevelId: 'level-4', label: 'Salões dos Condenados', bossLocked: true },
+    { marker: 'D2', targetLevelId: 'level-victory', label: 'Saída da Campanha', bossLocked: true },
     {
-      marker: 'D2',
+      marker: 'D3',
       targetLevelId: 'level-5b-secret',
       label: 'Arsenal Final',
       secret: true,
@@ -24,19 +25,19 @@ export const level5: LevelDefinition = {
   levers: [{ marker: 'V1', label: 'Válvula de emergência' }],
   grid: [
     '##############################',
-    '#P....D..............F.......#',
+    '#P....D....X.........X.......#',
     '#.....###........###.........#',
     '#............................#',
     '#........#...................#',
     '#............B......#........#',
     '#.......###........###......H#',
-    '#..A....................V....#',
+    '#..A...........X.........V...#',
     '#................###.........#',
-    '#............................#',
+    '#...........D................#',
     '#..............#.............#',
-    '#............................#',
+    '#.X..........................#',
     '#..H......D............#.....#',
-    '#............................#',
+    '#.........................X..#',
     '##############################',
   ],
 }

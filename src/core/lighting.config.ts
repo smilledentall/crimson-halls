@@ -23,11 +23,12 @@ export const LIGHTING_CONFIG = {
   fogColor: 0x221016,
   fogNear: 18,
   fogFar: 150,
-  // Tochas (luzes pontuais marcadas com 'F' no grid). Em candela.
+  // Tochas (cressets 'X' com luz embutida). Em candela.
   torchColor: 0xff9a4a,
-  torchIntensity: 55,
-  torchDistance: 34,
-  torchHeight: 1.9,
+  torchIntensity: 22,
+  torchDistance: 22,
+  // Altura da luz = posição da chama (a partícula de fogo nasce a 1.78 m).
+  torchFlameHeight: 1.78,
   // Lanterna do jogador (SpotLight filho da câmera) — garante visibilidade
   // mínima em qualquer ponto do mapa, independente das tochas fixas.
   flashlightColor: 0xffe6c0,

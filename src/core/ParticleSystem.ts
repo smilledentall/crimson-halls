@@ -31,7 +31,7 @@ interface Particle {
   gravity: number
 }
 
-const MAX_PARTICLES = 600
+const MAX_PARTICLES = 900
 const HIDDEN_Y = -1000
 
 /**
@@ -156,6 +156,40 @@ export class ParticleSystem {
       lift: 0,
       color: new THREE.Color(0xffe0a0),
     })
+  }
+
+  /** Emissor contínuo de chama (cressets): partículas nascem na abertura da
+   *  taça, sobem uma distância curta com pouca dispersão lateral (labareda).
+   *  Chame uma vez por frame por fonte; `intensity` escala a taxa de emissão. */
+  spawnFlame(position: THREE.Vector3, intensity = 1): void {
+    const rate = Math.round((1.2 + Math.random() * 0.6) * this.quality * intensity)
+    for (let i = 0; i < rate; i++) {
+      const p = this.pool[this.cursor]
+      this.cursor = (this.cursor + 1) % MAX_PARTICLES
+      p.active = true
+      // Nasce bem na abertura da taça, com leve jitter horizontal.
+      p.position.set(
+        position.x + (Math.random() * 2 - 1) * 0.05,
+        position.y + Math.random() * 0.04,
+        position.z + (Math.random() * 2 - 1) * 0.05,
+      )
+      // Sobe quase vertical, com dispersão lateral mínima (chama fina).
+      p.velocity.set(
+        (Math.random() * 2 - 1) * 0.18,
+        0.55 + Math.random() * 0.45,
+        (Math.random() * 2 - 1) * 0.18,
+      )
+      // Vida curta: a labareda sobe pouco e some.
+      p.maxLife = 0.3 + Math.random() * 0.25
+      p.life = p.maxLife
+      p.size = 0.08
+      p.gravity = 0.4 // leve desaceleração — não sobe como balão
+      // Núcleo amarelo esbranquiçado, ponta mais alaranjada.
+      const t = Math.random()
+      p.color.copy(new THREE.Color(1, 0.6 + t * 0.3, 0.2 + t * 0.15))
+      this.syncParticle(p)
+    }
+    this.anyActive = true
   }
 
   update(dt: number): void {

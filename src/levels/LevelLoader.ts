@@ -2,10 +2,52 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import type { WallAABB } from '../core/CollisionSystem'
 import { LIGHTING_CONFIG } from '../core/lighting.config'
-import { clonedCeilingTexture, clonedFloorTexture, clonedWallTexture } from '../core/Textures'
+import type { LevelTextures } from '../core/LevelTextureLoader'
 
 export const TILE_SIZE = 6 // metros por célula do grid
 export const WALL_HEIGHT = 3.2
+
+/** Ajusta as UVs de uma caixa para que a textura tila a cada `tileSize` metros,
+ *  evitando esticamento em paredes de comprimentos variados. */
+function scaleBoxUVs(
+  geometry: THREE.BoxGeometry,
+  width: number,
+  depth: number,
+  height: number,
+  tileSize: number,
+): void {
+  const uv = geometry.getAttribute('uv')
+  const index = geometry.getIndex()
+  if (!index) return
+
+  const repeatX = Math.max(1, Math.round(width / tileSize))
+  const repeatZ = Math.max(1, Math.round(depth / tileSize))
+  const repeatY = Math.max(1, Math.round(height / tileSize))
+
+  // BoxGeometry: cada face tem seu próprio grupo (px,nx,py,ny,pz,nz).
+  const faceRanges = [
+    { x: repeatZ, y: repeatY }, // faces laterais (normal ±X) usam largura=depth
+    { x: repeatZ, y: repeatY }, // (segunda face X)
+    { x: repeatX, y: repeatZ }, // topo/fundo (normal ±Y)
+    { x: repeatX, y: repeatZ }, // (segunda face Y)
+    { x: repeatX, y: repeatY }, // frente/trás (normal ±Z)
+    { x: repeatX, y: repeatY }, // (segunda face Z)
+  ]
+
+  for (let g = 0; g < geometry.groups.length; g++) {
+    const group = geometry.groups[g]
+    const scale = faceRanges[g % faceRanges.length]
+    for (let i = group.start; i < group.start + group.count; i++) {
+      const vertexIndex = index.getX(i)
+      uv.setXY(
+        vertexIndex,
+        uv.getX(vertexIndex) * scale.x,
+        uv.getY(vertexIndex) * scale.y,
+      )
+    }
+  }
+  uv.needsUpdate = true
+}
 
 export interface LevelDefinition {
   id: string
@@ -92,14 +134,17 @@ export interface PickupSpawn {
   kind: 'health' | 'ammo' | 'currency'
 }
 
-export interface LightSpec {
+export interface CressetSpawn {
   x: number
   z: number
-  y: number
+  /** true = montado na parede, false = em pé no chão. */
+  mounted: boolean
+  /** Cor e intensidade da PointLight embutida (cresset = única fonte de tocha). */
   color: number
   intensity: number
   distance: number
-  flicker: boolean
+  /** Altura da luz = posição da chama (a partícula de fogo nasce a 1.78 m). */
+  flameHeight: number
 }
 
 export interface ParsedLevel {
@@ -109,7 +154,8 @@ export interface ParsedLevel {
   playerSpawn: { x: number; z: number; yaw: number }
   enemySpawns: EnemySpawn[]
   pickups: PickupSpawn[]
-  lights: LightSpec[]
+  /** Cressets ('X'): cada um carrega a própria PointLight embutida. */
+  cressets: CressetSpawn[]
   doors: ParsedDoor[]
   levers: ParsedLever[]
   notes: Array<{ x: number; z: number }>
@@ -129,7 +175,7 @@ const CHAR_BOSS = 'B'
 const CHAR_HEALTH = 'H'
 const CHAR_AMMO = 'A'
 const CHAR_CURRENCY = 'C'
-const CHAR_LIGHT = 'F'
+const CHAR_CRESSET = 'X'
 const CHAR_DOOR = 'D'
 const CHAR_LEVER = 'V'
 const CHAR_NOTE = 'N'
@@ -143,7 +189,7 @@ export class LevelLoader {
     const walls: WallAABB[] = []
     const enemySpawns: EnemySpawn[] = []
     const pickups: PickupSpawn[] = []
-    const lights: LightSpec[] = []
+    const cressets: CressetSpawn[] = []
     const doors: ParsedDoor[] = []
     const levers: ParsedLever[] = []
     const notes: Array<{ x: number; z: number }> = []
@@ -188,17 +234,26 @@ export class LevelLoader {
           case CHAR_CURRENCY:
             pickups.push({ x: x + TILE_SIZE / 2, z: z + TILE_SIZE / 2, kind: 'currency' })
             break
-          case CHAR_LIGHT:
-            lights.push({
-              x: x + TILE_SIZE / 2,
-              z: z + TILE_SIZE / 2,
-              y: LIGHTING_CONFIG.torchHeight,
+          case CHAR_CRESSET: {
+            const cx = x + TILE_SIZE / 2
+            const cz = z + TILE_SIZE / 2
+            const wallAbove = row > 0 && definition.grid[row - 1][col] === '#'
+            const wallBelow = row < rows - 1 && definition.grid[row + 1]?.[col] === '#'
+            const wallLeft = col > 0 && definition.grid[row][col - 1] === '#'
+            const wallRight = col < definition.grid[row].length - 1 && definition.grid[row][col + 1] === '#'
+            cressets.push({
+              x: cx,
+              z: cz,
+              // Montado na parede se toca um '#'; senão, em pé no chão.
+              mounted: wallAbove || wallBelow || wallLeft || wallRight,
+              // Luz embutida: o cresset é a única fonte de tocha do jogo.
               color: LIGHTING_CONFIG.torchColor,
               intensity: LIGHTING_CONFIG.torchIntensity,
               distance: LIGHTING_CONFIG.torchDistance,
-              flicker: true,
+              flameHeight: LIGHTING_CONFIG.torchFlameHeight,
             })
             break
+          }
           case CHAR_DOOR: {
             // Marcador D1, D2... em ordem de varredura (linha, depois coluna).
             const marker = `D${doors.length + 1}`
@@ -240,7 +295,7 @@ export class LevelLoader {
       playerSpawn,
       enemySpawns,
       pickups,
-      lights,
+      cressets,
       doors,
       levers,
       notes,
@@ -252,7 +307,7 @@ export class LevelLoader {
   }
 
   /** Gera a malha estática do nível (paredes, chão e teto) em um único Group. */
-  buildLevel(parsed: ParsedLevel): THREE.Group {
+  buildLevel(parsed: ParsedLevel, textures: LevelTextures): THREE.Group {
     const group = new THREE.Group()
 
     const wallGeometries: THREE.BufferGeometry[] = []
@@ -260,6 +315,7 @@ export class LevelLoader {
       const width = wall.maxX - wall.minX
       const depth = wall.maxZ - wall.minZ
       const geo = new THREE.BoxGeometry(width, WALL_HEIGHT, depth)
+      scaleBoxUVs(geo, width, depth, WALL_HEIGHT, TILE_SIZE)
       geo.translate(wall.minX + width / 2, WALL_HEIGHT / 2, wall.minZ + depth / 2)
       wallGeometries.push(geo)
     }
@@ -268,9 +324,8 @@ export class LevelLoader {
       // Junta todas as paredes em uma única geometria: menos draw calls.
       const merged = mergeGeometries(wallGeometries)
       if (merged) {
-        const wallTexture = clonedWallTexture(2, 2)
         const material = new THREE.MeshStandardMaterial({
-          map: wallTexture,
+          map: textures.wall,
           roughness: 0.9,
           metalness: 0.05,
         })
@@ -283,8 +338,15 @@ export class LevelLoader {
     for (const geo of wallGeometries) geo.dispose()
 
     const { bounds } = parsed
-    const tileRepeat = Math.max(1, Math.round(bounds.maxX / 6))
-    const floorTexture = clonedFloorTexture(tileRepeat, Math.max(1, Math.round(bounds.maxZ / 6)))
+    const floorRepeatX = Math.max(1, Math.round(bounds.maxX / TILE_SIZE))
+    const floorRepeatZ = Math.max(1, Math.round(bounds.maxZ / TILE_SIZE))
+
+    const floorTexture = textures.floor.clone()
+    floorTexture.needsUpdate = true
+    floorTexture.wrapS = THREE.RepeatWrapping
+    floorTexture.wrapT = THREE.RepeatWrapping
+    floorTexture.repeat.set(floorRepeatX, floorRepeatZ)
+
     const floorGeo = new THREE.PlaneGeometry(bounds.maxX, bounds.maxZ)
     floorGeo.rotateX(-Math.PI / 2)
     const floor = new THREE.Mesh(
@@ -294,10 +356,12 @@ export class LevelLoader {
     floor.position.set(bounds.maxX / 2, 0, bounds.maxZ / 2)
     group.add(floor)
 
-    const ceilingTexture = clonedCeilingTexture(
-      tileRepeat,
-      Math.max(1, Math.round(bounds.maxZ / 6)),
-    )
+    const ceilingTexture = textures.ceiling.clone()
+    ceilingTexture.needsUpdate = true
+    ceilingTexture.wrapS = THREE.RepeatWrapping
+    ceilingTexture.wrapT = THREE.RepeatWrapping
+    ceilingTexture.repeat.set(floorRepeatX, floorRepeatZ)
+
     const ceilingGeo = new THREE.PlaneGeometry(bounds.maxX, bounds.maxZ)
     ceilingGeo.rotateX(Math.PI / 2)
     const ceiling = new THREE.Mesh(
@@ -307,6 +371,46 @@ export class LevelLoader {
     ceiling.position.set(bounds.maxX / 2, WALL_HEIGHT, bounds.maxZ / 2)
     group.add(ceiling)
 
+    for (const cresset of parsed.cressets) {
+      group.add(this.buildCresset(cresset))
+    }
+
+    return group
+  }
+
+  /** Candelabro de pé: base no chão, haste vertical subindo e taça cônica no topo. */
+  private buildCresset(cresset: CressetSpawn): THREE.Group {
+    const group = new THREE.Group()
+    const metal = new THREE.MeshStandardMaterial({
+      color: 0x3a3238,
+      roughness: 0.85,
+      metalness: 0.45,
+    })
+
+    // Base/apoio no chão.
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 0.06, 12), metal)
+    base.position.y = 0.03
+    group.add(base)
+
+    // Haste fina vertical, do chão até a taça (altura de tocha de corredor).
+    const rodLength = 1.35
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, rodLength, 8), metal)
+    rod.position.y = 0.06 + rodLength / 2
+    group.add(rod)
+
+    // Taça cônica (boca larga em cima), apoiada no topo da haste.
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.09, 0.34, 12), metal)
+    cup.position.y = 0.06 + rodLength + 0.17
+    group.add(cup)
+
+    // Aro da boca.
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.045, 12), metal)
+    rim.position.y = 0.06 + rodLength + 0.34
+    group.add(rim)
+
+    group.position.x = cresset.x
+    group.position.z = cresset.z
+    group.position.y = 0
     return group
   }
 }

@@ -11,6 +11,10 @@ import { level4 } from './level-4'
 import { level4bSecret } from './level-4b-secret'
 import { level5 } from './level-5'
 import { level5bSecret } from './level-5b-secret'
+import { levelVictory } from './level-victory'
+
+/** Id do nível-sentinela da saída da campanha (porta de vitória). */
+export const VICTORY_LEVEL_ID = 'level-victory'
 
 /** Todos os níveis, incluindo salas secretas e ramos alternativos. */
 export const ALL_LEVELS: LevelDefinition[] = [
@@ -26,6 +30,7 @@ export const ALL_LEVELS: LevelDefinition[] = [
   level3cSecret,
   level4bSecret,
   level5bSecret,
+  levelVictory,
 ]
 
 /** Campanha principal linear (1→2→3→4→5). */

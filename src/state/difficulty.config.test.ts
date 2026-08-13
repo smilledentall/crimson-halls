@@ -14,6 +14,10 @@ describe('difficulty.config', () => {
     expect(normal.enemyHealth).toBeLessThan(hard.enemyHealth)
     expect(easy.pickupAmmoMultiplier).toBeGreaterThan(normal.pickupAmmoMultiplier)
     expect(normal.pickupAmmoMultiplier).toBeGreaterThan(hard.pickupAmmoMultiplier)
+    // Velocidade: fácil mais lento que normal, que é mais lento que difícil.
+    expect(easy.enemySpeedMultiplier).toBeLessThan(normal.enemySpeedMultiplier)
+    expect(normal.enemySpeedMultiplier).toBeLessThan(hard.enemySpeedMultiplier)
+    expect(hard.enemySpeedMultiplier).toBeGreaterThanOrEqual(1.2)
   })
 
   it('valida valores de dificuldade', () => {

@@ -2,7 +2,7 @@ import * as THREE from 'three'
 
 /**
  * Texturas procedurais (geradas via canvas) para paredes, chão e teto.
- * Baratas de gerar e dão sensação de espaço sem depender de arquivos.
+ * Servem como fallback se as texturas de imagem falharem ao carregar.
  */
 
 function createCanvas(size: number): [HTMLCanvasElement, CanvasRenderingContext2D] {

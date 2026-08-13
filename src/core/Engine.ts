@@ -6,6 +6,7 @@ import { preloadEnemySprites } from './SpriteLoader'
 import { LIGHTING_CONFIG } from './lighting.config'
 import { ParticleSystem } from './ParticleSystem'
 import { computeSplashDamage } from './splash'
+import { findSpawnPosition } from './spawnPosition'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
@@ -21,8 +22,9 @@ import { PLAYER_CONFIG } from '../entities/player.config'
 import { Projectile } from '../entities/Projectile'
 import { Rocket } from '../entities/Rocket'
 import { LevelLoader, WALL_HEIGHT } from '../levels/LevelLoader'
+import { getLevelTextures } from './LevelTextureLoader'
 import type { ParsedLevel, WaveDefinition } from '../levels/LevelLoader'
-import { LEVELS_BY_ID } from '../levels/levels'
+import { LEVELS_BY_ID, VICTORY_LEVEL_ID } from '../levels/levels'
 import { useGameStore, maxHealthFor } from '../state/gameStore'
 import type { GamePhase } from '../state/gameStore'
 import { DIFFICULTIES } from '../state/difficulty.config'
@@ -48,6 +50,25 @@ const DOOR_INTERACT_RANGE = 2.4
 const TRANSITION_DURATION = 0.35
 const DOOR_LABEL_RANGE = 28
 const DOOR_LABEL_FADE = 16
+
+/** Estado de sessão por nível: o que já foi eliminado/coletado/destravado. */
+interface LevelSessionState {
+  deadEnemies: Set<string>
+  collectedPickups: Set<string>
+  activatedLevers: Set<string>
+  cleared: boolean
+  bossDefeated: boolean
+}
+
+function emptySession(): LevelSessionState {
+  return {
+    deadEnemies: new Set<string>(),
+    collectedPickups: new Set<string>(),
+    activatedLevers: new Set<string>(),
+    cleared: false,
+    bossDefeated: false,
+  }
+}
 
 const VIGNETTE_SHADER = {
   uniforms: {
@@ -118,6 +139,9 @@ export class Engine {
   private lastBossPct = -1
   private activeSummons = 0
   private regenTimer = 0
+  /** Estado de sessão por nível (inimigos/pickups/portas persistem ao revisitar). */
+  private levelSessions = new Map<string, LevelSessionState>()
+  private session: LevelSessionState = emptySession()
   private transitionState: 'idle' | 'fading-in' | 'fading-out' = 'idle'
   private transitionTarget: string | null = null
   private transitionFade = 0
@@ -146,6 +170,7 @@ export class Engine {
   private composer: EffectComposer | null = null
   private bloomPass: UnrealBloomPass | null = null
   private levelLights: Array<{ light: THREE.PointLight; base: number; flicker: boolean }> = []
+  private cressetFlames: Array<{ x: number; y: number; z: number; intensity: number }> = []
   private effectLights: Array<{ light: THREE.PointLight; life: number; maxLife: number }> = []
   private shake = 0
   private flickerTime = 0
@@ -292,6 +317,8 @@ export class Engine {
       if (state.graphicsQuality !== prev.graphicsQuality) this.applyGraphicsQuality()
       if (state.brightness !== prev.brightness) this.applyBrightness()
       if (state.weaponUpgrades !== prev.weaponUpgrades) this.weapons = this.createWeapons()
+      // Nova corrida (novo jogo/continuar) → zera o estado de sessão.
+      if (state.runId !== prev.runId) this.levelSessions.clear()
       // Intro dispensada → pede o Pointer Lock para o jogador retomar o controle.
       if (state.levelIntro !== prev.levelIntro && !state.levelIntro) {
         if (state.phase === 'playing' && this.input && !this.input.isPointerLocked()) {
@@ -326,6 +353,7 @@ export class Engine {
     this.input?.detach()
     this.input = null
     this.clearLevel()
+    this.levelSessions.clear()
     this.clearLevelGroupCache()
     this.clearAllLights()
     this.particles?.dispose()
@@ -469,6 +497,7 @@ export class Engine {
     }
 
     this.weaponView?.update(dt)
+    this.updateCressetFlames()
     this.particles?.update(dt)
     this.updateEffectLights(dt)
     this.updateLevelLightFlicker(dt)
@@ -567,6 +596,15 @@ export class Engine {
       } else {
         entry.light.intensity *= 1 - dt * 6
       }
+    }
+  }
+
+  /** Emite partículas de chama contínuas nos cressets decorativos. */
+  private updateCressetFlames(): void {
+    if (this.cressetFlames.length === 0 || !this.particles) return
+    if (useGameStore.getState().phase !== 'playing') return
+    for (const flame of this.cressetFlames) {
+      this.particles.spawnFlame(new THREE.Vector3(flame.x, flame.y, flame.z), flame.intensity)
     }
   }
 
@@ -683,6 +721,7 @@ export class Engine {
         this.enemies.splice(i, 1)
         useGameStore.getState().addKill()
         useGameStore.getState().addCurrency(enemy.type.reward)
+        if (enemy.spawnId) this.session.deadEnemies.add(enemy.spawnId)
         this.audio.playPositional('enemy_death', enemy.position)
         this.spawnEnemyDeathParticles(enemy)
         // Kamikaze explode ao morrer (a menos que já tenha detonado no contato).
@@ -702,6 +741,7 @@ export class Engine {
     const allSpawned = this.spawnedEnemyCount >= this.totalEnemiesToSpawn
     if (!this.levelCleared && allSpawned && this.enemies.length === 0) {
       this.levelCleared = true
+      this.session.cleared = true
       useGameStore.getState().setLevelCleared(true)
       this.refreshDoorStates()
       this.audio.play('sector_clear')
@@ -710,15 +750,18 @@ export class Engine {
     }
   }
 
-  /** Sequência elaborada de derrota do chefe: explosões → vitória. */
+  /** Sequência elaborada de derrota do chefe: destrava as portas e libera a saída. */
   private startBossDefeat(): void {
     this.bossDefeated = true
+    this.session.bossDefeated = true
+    if (this.boss?.spawnId) this.session.deadEnemies.add(this.boss.spawnId)
     this.bossDefeatActive = true
     this.bossDefeatTimer = 2.6
     this.bossDefeatAccum = 0
     this.refreshDoorStates()
     this.addShake(0.8)
     this.audio.play('boss_roar')
+    useGameStore.getState().setVictoryAvailable(true)
   }
 
   private updateBossDefeat(dt: number): void {
@@ -740,9 +783,9 @@ export class Engine {
       this.audio.play('explosion')
     }
     if (this.bossDefeatTimer <= 0) {
+      // Sequência encerrada: portas destravadas; o jogador escolhe quando sair
+      // (a vitória só dispara ao usar a porta de saída da campanha).
       this.bossDefeatActive = false
-      // Epílogo (tela de encerramento) antes da vitória.
-      useGameStore.getState().setEpilogue(EPILOGUE)
     }
   }
 
@@ -793,15 +836,32 @@ export class Engine {
     if (!parsed || !this.scene || parsed.waveSpawns.length === 0) return
     const point = parsed.waveSpawns[Math.floor(Math.random() * parsed.waveSpawns.length)]
     if (!point) return
-    const jitter = 1.5
-    const x = point.x + (Math.random() * 2 - 1) * jitter
-    const z = point.z + (Math.random() * 2 - 1) * jitter
     const type = ENEMY_TYPES.find(t => t.id === enemyType) ?? ENEMY_TYPES[0]
+    const pos = this.findEnemySpawnPosition(point.x, point.z, type.radius)
     const healthMult = DIFFICULTIES[useGameStore.getState().difficulty].enemyHealth
-    const enemy = createEnemy(type, x, z, healthMult, this.enemyCombatModifiers())
+    const enemy = createEnemy(type, pos.x, pos.z, healthMult, this.enemyCombatModifiers())
     this.enemies.push(enemy)
     this.scene.add(enemy.mesh)
     this.spawnedEnemyCount++
+  }
+
+  /**
+   * Encontra uma posição de spawn livre perto de (baseX, baseZ): sorteia
+   * candidatos num anel de 2–4 m e escolhe um que não esteja dentro de parede
+   * nem a menos de ~1.8 m de outro inimigo já posicionado. Evita que inimigos
+   * duplicados do mesmo marcador nasçam colados uns nos outros.
+   */
+  private findEnemySpawnPosition(
+    baseX: number,
+    baseZ: number,
+    radius: number,
+  ): { x: number; z: number } {
+    const occupants = this.enemies.map(other => ({
+      x: other.position.x,
+      z: other.position.z,
+      radius: other.type.radius,
+    }))
+    return findSpawnPosition(baseX, baseZ, radius, this.collision, occupants)
   }
 
   /** Atualiza os foguetes do lançador: movimento + colisão + explosão. */
@@ -894,6 +954,7 @@ export class Engine {
         if (Math.hypot(dx, dz) <= PICKUP_CONFIG.collectRadius) {
           this.applyPickup(pickup)
           pickup.collect()
+          if (pickup.id) this.session.collectedPickups.add(pickup.id)
         }
       }
 
@@ -913,8 +974,9 @@ export class Engine {
     } else if (pickup.definition.kind === 'currency') {
       store.addCurrency(PICKUP_CONFIG.currencyAmount)
     } else {
-      // Munição vai para a arma atualmente equipada.
-      store.pickupAmmo(store.currentWeaponId, PICKUP_CONFIG.ammoAmount)
+      // Munição recarrega TODAS as armas finitas (não só a equipada), então
+      // coletar com a pistola em mãos também repõe escopeta/rifle/foguete.
+      store.pickupAmmoAll(PICKUP_CONFIG.ammoAmount)
     }
     this.audio.play('pickup')
   }
@@ -1169,14 +1231,21 @@ export class Engine {
     }
   }
 
-  /** Tecla G (edge trigger): usa a porta, ativa a válvula ou lê a nota. */
+  /** Tecla G (edge trigger): usa a porta (saída da campanha = epílogo), etc. */
   private handleInteractKey(): void {
     const pressed = this.input?.isKeyDown('KeyG') ?? false
     if (pressed && !this.interactKeyHeld) {
       const store = useGameStore.getState()
       const door = store.interactableDoor
       if (door && !door.locked && LEVELS_BY_ID[door.targetLevelId]) {
-        this.beginTransition(door.targetLevelId)
+        if (door.targetLevelId === VICTORY_LEVEL_ID) {
+          // Porta de saída da campanha: encerra a missão (epílogo → vitória).
+          this.audio.play('door')
+          useGameStore.getState().setVictoryAvailable(false)
+          useGameStore.getState().setEpilogue(EPILOGUE)
+        } else {
+          this.beginTransition(door.targetLevelId)
+        }
       } else if (store.interactableLever) {
         this.activateLever(store.interactableLever.marker)
       } else if (store.interactableNote) {
@@ -1205,6 +1274,7 @@ export class Engine {
   private activateLever(marker: string): void {
     if (this.activatedLevers.has(marker)) return
     this.activatedLevers.add(marker)
+    this.session.activatedLevers.add(marker)
     this.audio.play('lever')
     this.refreshDoorStates()
     useGameStore.getState().setInteractableLever(null)
@@ -1321,12 +1391,16 @@ export class Engine {
     if (phase === 'playing') useGameStore.getState().pause()
   }
 
-  private startLevel(levelId: string): void {
+  private async startLevel(levelId: string): Promise<void> {
     if (!this.scene || !this.player) return
     // Nível customizado do editor tem prioridade sobre a campanha.
     const custom = useGameStore.getState().customLevel
     const definition = custom ?? LEVELS_BY_ID[levelId]
     if (!definition) return
+
+    // Carrega as texturas do nível (se forem de imagem)
+    const textures = await getLevelTextures(levelId)
+
     const parsed = this.levelLoader.parse(definition)
 
     this.clearLevel()
@@ -1336,7 +1410,7 @@ export class Engine {
     const groupKey = definition.id
     let group = this.levelGroupCache.get(groupKey)
     if (!group) {
-      group = this.levelLoader.buildLevel(parsed)
+      group = this.levelLoader.buildLevel(parsed, textures)
       this.levelGroupCache.set(groupKey, group)
     }
     this.levelRoot = group
@@ -1354,16 +1428,20 @@ export class Engine {
     const enemyHealthMult = DIFFICULTIES[difficulty].enemyHealth
     const waveIntervalMult = DIFFICULTIES[difficulty].waveIntervalMultiplier
     const waveCountTotal = (parsed.waves ?? []).reduce((sum, wave) => sum + wave.count, 0)
-    const bossCount = parsed.enemySpawns.filter(s => s.enemyType === 'boss').length
-    const gridCount = parsed.enemySpawns.length
+
+    // Estado de sessão deste nível (eliminações/coletas persistem ao revisitar).
+    this.session = this.levelSessions.get(levelId) ?? emptySession()
+    // Grava a sessão no mapa: sem isso, ao sair e voltar o mapa está vazio e
+    // o nível reinicia (inimigos/pickups reaparecem).
+    this.levelSessions.set(levelId, this.session)
+    const session = this.session
+
     this.spawnedEnemyCount = 0
     this.waveTime = 0
     this.pendingWaves = [...(parsed.waves ?? [])]
       .map(wave => ({ ...wave, delay: wave.delay * waveIntervalMult }))
       .sort((a, b) => a.delay - b.delay)
-    this.totalEnemiesToSpawn =
-      (gridCount - bossCount) * ENEMY_SPAWN_MULTIPLIER + bossCount + waveCountTotal * ENEMY_SPAWN_MULTIPLIER
-    // Setor começa "não limpo": portas trancadas até zerar os inimigos.
+    // Setor começa "não limpo"; o estado de sessão restaura abaixo.
     this.levelCleared = false
     this.boss = null
     this.bossDefeated = false
@@ -1374,41 +1452,72 @@ export class Engine {
     this.activeSummons = 0
     useGameStore.getState().setLevelCleared(false)
     useGameStore.getState().setBossBar(null)
+    useGameStore.getState().setVictoryAvailable(false)
+
+    // Spawn de inimigos: ignora spawns já eliminados nesta sessão.
+    let gridTotal = 0
+    let spawnIndex = 0
     for (const spawn of parsed.enemySpawns) {
       const type = ENEMY_TYPES.find(t => t.id === spawn.enemyType) ?? ENEMY_TYPES[0]
+      const spawnId = `e${spawnIndex}`
+      spawnIndex++
+      const alreadyGone =
+        session.deadEnemies.has(spawnId) || (type.id === 'boss' && session.bossDefeated)
+      if (alreadyGone) continue
       const dupCount = type.id === 'boss' ? 1 : ENEMY_SPAWN_MULTIPLIER
       for (let dup = 0; dup < dupCount; dup++) {
-        // Deslocamento para os duplicados não nascerem sobrepostos.
-        const offsetX = dup === 0 ? 0 : dup % 2 === 0 ? -1.4 : 1.4
-        const offsetZ = dup === 1 ? 1.4 : 0
+        const pos = this.findEnemySpawnPosition(spawn.x, spawn.z, type.radius)
         const enemy = createEnemy(
           type,
-          spawn.x + offsetX,
-          spawn.z + offsetZ,
+          pos.x,
+          pos.z,
           enemyHealthMult,
           this.enemyCombatModifiers(),
         )
+        enemy.spawnId = spawnId
         this.enemies.push(enemy)
         this.scene.add(enemy.mesh)
         this.spawnedEnemyCount++
+        gridTotal++
         if (type.id === 'boss' && dup === 0) this.boss = enemy
       }
     }
+    this.totalEnemiesToSpawn = gridTotal + waveCountTotal * ENEMY_SPAWN_MULTIPLIER
 
-    // Spawn de pickups.
+    // Spawn de pickups: ignora os já coletados nesta sessão.
+    let pickupIndex = 0
     for (const spawn of parsed.pickups) {
+      const pickupId = `p${pickupIndex}`
+      pickupIndex++
+      if (session.collectedPickups.has(pickupId)) continue
       const pickup = new Pickup(spawn)
+      pickup.id = pickupId
       this.pickups.push(pickup)
       this.scene.add(pickup.mesh)
     }
 
-    // Luzes do nível (tochas / emergência) com leve flicker.
-    for (const spec of parsed.lights) {
-      const light = new THREE.PointLight(spec.color, spec.intensity, spec.distance, 2)
-      light.position.set(spec.x, spec.y, spec.z)
+    // Cressets ('X'): cada um carrega a PointLight embutida na altura da chama
+    // (única fonte de tocha do jogo — nunca há luz sem objeto visual).
+    this.levelLights = []
+    for (const cresset of parsed.cressets) {
+      const light = new THREE.PointLight(
+        cresset.color,
+        cresset.intensity,
+        cresset.distance,
+        2,
+      )
+      light.position.set(cresset.x, cresset.flameHeight, cresset.z)
       this.scene.add(light)
-      this.levelLights.push({ light, base: spec.intensity, flicker: spec.flicker })
+      this.levelLights.push({ light, base: cresset.intensity, flicker: true })
     }
+
+    // Cressets: emissores contínuos de chama na mesma posição da luz.
+    this.cressetFlames = parsed.cressets.map(cresset => ({
+      x: cresset.x,
+      y: cresset.flameHeight,
+      z: cresset.z,
+      intensity: 1,
+    }))
 
     // Portas: estrutura simples com brilho emissivo (indica interatividade).
     // Destravam por setor limpo, por válvula (`requires`) ou pela morte do chefe.
@@ -1435,6 +1544,13 @@ export class Engine {
       this.leverMeshes.push(mesh)
       this.scene.add(mesh)
     }
+    // Restaura o estado de sessão (válvulas, chefe derrotado, setor limpo).
+    for (const marker of session.activatedLevers) this.activatedLevers.add(marker)
+    if (session.bossDefeated) this.bossDefeated = true
+    if (session.cleared) {
+      this.levelCleared = true
+      useGameStore.getState().setLevelCleared(true)
+    }
     this.refreshDoorStates()
 
     // Notas de lore (salas secretas).
@@ -1454,7 +1570,7 @@ export class Engine {
     useGameStore.getState().setLevelIntro(intro ?? null)
 
     console.log(
-      `[engine] nível '${parsed.name}': tochas=${this.levelLights.length}, ` +
+      `[engine] nível '${parsed.name}': cressets=${parsed.cressets.length} (luz embutida), ` +
         `inimigos fixos=${parsed.enemySpawns.length}, ondas=${parsed.waves.length}, ` +
         `portas=${parsed.doors.length}, válvulas=${parsed.levers.length}, notas=${parsed.notes.length}`,
     )
@@ -1680,11 +1796,15 @@ export class Engine {
   }
 
   private clearLevel(): void {
+    // Luzes de tocha/efeito pertencem ao nível: sem isso, PointLights antigos
+    // ficam presos na cena (em coordenadas absolutas) e o bloom estoura.
+    this.clearAllLights()
     // A malha estática fica em cache (levelGroupCache) — aqui só sai da cena,
     // sem descartar geometria, para a próxima visita ser instantânea.
     if (this.levelRoot && this.scene) this.scene.remove(this.levelRoot)
     this.levelRoot = null
     this.wallMeshes = []
+    this.cressetFlames = []
     for (const enemy of this.enemies) {
       this.scene?.remove(enemy.mesh)
       enemy.dispose()

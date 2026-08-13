@@ -3,7 +3,7 @@ import type { DoorDefinition, LevelDefinition } from '../levels/LevelLoader'
 import { LEVELS } from '../levels/levels'
 import { useGameStore } from '../state/gameStore'
 
-type EditorTool = 'wall' | 'floor' | 'player' | 'chaser' | 'shooter' | 'health' | 'ammo' | 'door'
+type EditorTool = 'wall' | 'floor' | 'player' | 'chaser' | 'shooter' | 'health' | 'ammo' | 'door' | 'cresset'
 
 const TOOL_CHAR: Record<EditorTool, string> = {
   wall: '#',
@@ -14,6 +14,7 @@ const TOOL_CHAR: Record<EditorTool, string> = {
   health: 'H',
   ammo: 'A',
   door: 'D',
+  cresset: 'X',
 }
 
 const TOOLS: Array<{ id: EditorTool; char: string; label: string; color: string }> = [
@@ -25,6 +26,7 @@ const TOOLS: Array<{ id: EditorTool; char: string; label: string; color: string 
   { id: 'health', char: 'H', label: 'Vida', color: '#2ee07a' },
   { id: 'ammo', char: 'A', label: 'Munição', color: '#ffd24a' },
   { id: 'door', char: 'D', label: 'Porta', color: '#35e0c0' },
+  { id: 'cresset', char: 'X', label: 'Cresset (luz)', color: '#ffb04a' },
 ]
 
 const CELL = 20
@@ -113,6 +115,7 @@ function drawGrid(grid: string[][], canvas: HTMLCanvasElement | null): void {
     H: '#2ee07a',
     A: '#ffd24a',
     D: '#35e0c0',
+    X: '#ffb04a',
   }
 
   for (let r = 0; r < rows; r++) {

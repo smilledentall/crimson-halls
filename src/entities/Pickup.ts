@@ -19,6 +19,8 @@ export class Pickup {
   readonly definition: PickupDefinition
   readonly mesh: THREE.Group
   collected = false
+  /** Id no nível atual (persistência de sessão). */
+  id = ''
 
   private bobPhase: number
   private collectTimer = 0

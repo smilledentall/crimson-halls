@@ -72,6 +72,26 @@ describe('gameStore: dano, vida e munição', () => {
     useGameStore.getState().spendAmmo('rifle', 5)
     expect(useGameStore.getState().ammo.rifle).toBe(0)
   })
+
+  it('pickupAmmoAll recarrega todas as armas finitas, ignorando as infinitas', () => {
+    useGameStore.setState({ ammo: { ...AMMO, shotgun: 0, rifle: 0, rocket: 0 } })
+    useGameStore.getState().pickupAmmoAll(4)
+    const ammo = useGameStore.getState().ammo
+    expect(ammo.shotgun).toBe(4) // escopeta: 0 + 4 (cap 8)
+    expect(ammo.rifle).toBe(4) // rifle: 0 + 4 (cap 60)
+    expect(ammo.rocket).toBe(4) // foguete: 0 + 4 (cap 6)
+    expect(ammo.pistol).toBe(0) // infinita — não muda
+    expect(ammo.chainsaw).toBe(0) // infinita — não muda
+  })
+
+  it('pickupAmmoAll respeita a capacidade de cada arma', () => {
+    useGameStore.setState({ ammo: { ...AMMO, shotgun: 6, rifle: 58, rocket: 5 } })
+    useGameStore.getState().pickupAmmoAll(10)
+    const ammo = useGameStore.getState().ammo
+    expect(ammo.shotgun).toBe(8) // 6 + 10 capado em 8
+    expect(ammo.rifle).toBe(60) // 58 + 10 capado em 60
+    expect(ammo.rocket).toBe(6) // 5 + 10 capado em 6
+  })
 })
 
 describe('gameStore: progressão (moeda, upgrades, habilidades)', () => {

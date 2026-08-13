@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Exports de sessão de assistente (lixo local)
+novo-projeto-nessa-pasta.json

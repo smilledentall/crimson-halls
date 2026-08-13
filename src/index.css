@@ -907,6 +907,16 @@ body {
   pointer-events: none;
 }
 
+.victory-hint {
+  top: 26%;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #ffcf6a;
+  background: rgba(60, 40, 12, 0.85);
+  border-color: #ffcf6a;
+  text-transform: none;
+}
+
 .door-prompt.locked {
   color: #e8c9cd;
   background: rgba(40, 20, 22, 0.85);

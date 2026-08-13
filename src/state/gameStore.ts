@@ -58,6 +58,10 @@ export interface GameStore {
   noteModal: string | null
   /** Epílogo pós-chefe (texto de encerramento). */
   epilogue: string[] | null
+  /** True após o chefe ser derrotado (portas liberadas, saída disponível). */
+  victoryAvailable: boolean
+  /** Incrementado a cada nova corrida (novo jogo/continuar) — zera a sessão da engine. */
+  runId: number
 
   // Progressão persistente.
   currency: number
@@ -103,6 +107,7 @@ export interface GameStore {
   setNoteModal: (text: string | null) => void
   setEpilogue: (lines: string[] | null) => void
   dismissEpilogue: () => void
+  setVictoryAvailable: (available: boolean) => void
   enterDoor: (targetLevelId: string) => void
   setMouseSensitivity: (value: number) => void
   setInvertY: (value: boolean) => void
@@ -126,6 +131,8 @@ export interface GameStore {
   completeLevel: () => void
   pickupHealth: (amount: number) => void
   pickupAmmo: (weaponId: WeaponId, amount: number) => void
+  /** Recarrega todas as armas de munição finita (as infinitas são ignoradas). */
+  pickupAmmoAll: (amount: number) => void
   spendAmmo: (weaponId: WeaponId, amount: number) => void
   equipWeapon: (weaponId: WeaponId) => void
   playCustomLevel: (definition: LevelDefinition) => void
@@ -206,6 +213,8 @@ export const useGameStore = create<GameStore>(set => {
     interactableNote: false,
     noteModal: null,
     epilogue: null,
+    victoryAvailable: false,
+    runId: 0,
 
     currency: 0,
     weaponUpgrades: {},
@@ -310,7 +319,7 @@ export const useGameStore = create<GameStore>(set => {
     startGame: () => {
       // Novo jogo sobrescreve o save e zera a progressão.
       clearSave()
-      set({
+      set(state => ({
         phase: 'playing',
         levelId: 'level-1',
         levelName: LEVELS_BY_ID['level-1'].name,
@@ -323,7 +332,9 @@ export const useGameStore = create<GameStore>(set => {
         weaponUpgrades: {},
         skillPoints: 0,
         skillUpgrades: {},
-      })
+        victoryAvailable: false,
+        runId: state.runId + 1,
+      }))
     },
 
     continueGame: () => {
@@ -332,7 +343,7 @@ export const useGameStore = create<GameStore>(set => {
       const level = LEVELS_BY_ID[save.levelId]
       if (!level) return
       const upgrades = save.weaponUpgrades ?? {}
-      set({
+      set(state => ({
         phase: 'playing',
         levelId: save.levelId,
         levelName: level.name,
@@ -346,7 +357,9 @@ export const useGameStore = create<GameStore>(set => {
         weaponUpgrades: upgrades,
         skillPoints: save.skillPoints ?? 0,
         skillUpgrades: save.skillUpgrades ?? {},
-      })
+        victoryAvailable: false,
+        runId: state.runId + 1,
+      }))
     },
 
     retryLevel: () =>
@@ -385,9 +398,10 @@ export const useGameStore = create<GameStore>(set => {
     setNoteModal: text => set({ noteModal: text }),
     setEpilogue: lines => set({ epilogue: lines }),
     dismissEpilogue: () => {
-      set({ epilogue: null })
+      set({ epilogue: null, victoryAvailable: false })
       useGameStore.getState().completeLevel()
     },
+    setVictoryAvailable: available => set({ victoryAvailable: available }),
 
     enterDoor: targetLevelId =>
       set(state => {
@@ -483,6 +497,19 @@ export const useGameStore = create<GameStore>(set => {
         return { ammo: { ...state.ammo, [weaponId]: next } }
       }),
 
+    pickupAmmoAll: amount =>
+      set(state => {
+        const multiplier = DIFFICULTIES[state.difficulty].pickupAmmoMultiplier
+        const granted = Math.max(1, Math.round(amount * multiplier))
+        const ammo = { ...state.ammo }
+        for (const id of WEAPON_ORDER) {
+          const capacity = effectiveCapacity(id, state.weaponUpgrades)
+          if (capacity === 0) continue // arma infinita (pistola/motosserra) — nada a recarregar
+          ammo[id] = Math.min(capacity, ammo[id] + granted)
+        }
+        return { ammo }
+      }),
+
     spendAmmo: (weaponId, amount) =>
       set(state => ({
         ammo: { ...state.ammo, [weaponId]: Math.max(0, state.ammo[weaponId] - amount) },
@@ -491,7 +518,7 @@ export const useGameStore = create<GameStore>(set => {
     equipWeapon: weaponId => set({ currentWeaponId: weaponId }),
 
     playCustomLevel: definition =>
-      set({
+      set(state => ({
         phase: 'playing',
         customLevel: definition,
         levelId: definition.id,
@@ -500,18 +527,22 @@ export const useGameStore = create<GameStore>(set => {
         kills: 0,
         currentWeaponId: 'pistol',
         ammo: initialAmmo(),
-      }),
+        victoryAvailable: false,
+        runId: state.runId + 1,
+      })),
 
     resetProgress: () => {
       clearSave()
-      set({
+      set(state => ({
         phase: 'menu',
         customLevel: null,
         currency: 0,
         weaponUpgrades: {},
         skillPoints: 0,
         skillUpgrades: {},
-      })
+        victoryAvailable: false,
+        runId: state.runId + 1,
+      }))
     },
   }
 })

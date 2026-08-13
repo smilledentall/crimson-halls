@@ -24,6 +24,7 @@ export function HUD() {
   const interactableNote = useGameStore(state => state.interactableNote)
   const noteModal = useGameStore(state => state.noteModal)
   const bossBar = useGameStore(state => state.bossBar)
+  const victoryAvailable = useGameStore(state => state.victoryAvailable)
   const levelCleared = useGameStore(state => state.levelCleared)
   const fps = useGameStore(state => state.fps)
   const colorblindMode = useGameStore(state => state.colorblindMode)
@@ -89,6 +90,12 @@ export function HUD() {
       </div>
 
       {levelCleared && <div className="sector-clear-banner">SETOR LIMPO</div>}
+
+      {victoryAvailable && (
+        <div className="sector-clear-banner victory-hint">
+          O Thane caiu — explore e use a saída para encerrar a missão
+        </div>
+      )}
 
       {bossBar && (
         <div className="boss-bar">

@@ -56,6 +56,8 @@ export class Enemy {
   state: EnemyState = 'idle'
   /** True quando o inimigo já detonou sua explosão (kamikaze). */
   exploded = false
+  /** Id do spawn no nível atual (persistência de sessão). */
+  spawnId: string | null = null
 
   protected readonly bodyMaterials: THREE.MeshStandardMaterial[] = []
   protected readonly scaleFactor: number
