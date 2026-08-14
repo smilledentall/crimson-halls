@@ -13,7 +13,7 @@ export const level5: LevelDefinition = {
   atmosphere: { fogColor: 0x460c18, ambientColor: 0xd0a0b0, fogFar: 120 },
   doors: [
     { marker: 'D1', targetLevelId: 'level-4', label: 'Salões dos Condenados', bossLocked: true },
-    { marker: 'D2', targetLevelId: 'level-victory', label: 'Saída da Campanha', bossLocked: true },
+    { marker: 'D2', targetLevelId: 'level-6', label: 'Caldeiras de Lava', bossLocked: true },
     {
       marker: 'D3',
       targetLevelId: 'level-5b-secret',

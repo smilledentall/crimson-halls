@@ -6,7 +6,7 @@
  * A dificuldade NÃO é só "esponja de dano": também altera comportamento
  * (velocidade de perseguição, cooldown de ataque e precisão de atiradores).
  */
-export type DifficultyId = 'easy' | 'normal' | 'hard'
+export type DifficultyId = 'easy' | 'normal' | 'hard' | 'extreme'
 
 export interface DifficultyConfig {
   id: DifficultyId
@@ -56,20 +56,31 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultyConfig> = {
   hard: {
     id: 'hard',
     name: 'Difícil',
-    description:
-      'Inimigos velozes, agressivos e precisos, com muita vida; menos munição e dano recebido alto.',
+    description: 'Inimigos velozes, agressivos e precisos, com muita vida; menos munição e dano recebido alto.',
     playerDamageReceived: 1.9,
-    enemyHealth: 2.0,
+    enemyHealth: 2,
     pickupAmmoMultiplier: 0.5,
     waveIntervalMultiplier: 0.6,
     enemySpeedMultiplier: 1.3,
     enemyAttackIntervalMultiplier: 0.8,
     enemySpreadMultiplier: 0.6,
   },
+  extreme: {
+    id: 'extreme',
+    name: 'Extremo',
+    description: 'Inimigos implacáveis, alta velocidade, dano massivo e pouca munição.',
+    playerDamageReceived: 2.5,
+    enemyHealth: 3,
+    pickupAmmoMultiplier: 0.3,
+    waveIntervalMultiplier: 0.4,
+    enemySpeedMultiplier: 1.6,
+    enemyAttackIntervalMultiplier: 0.6,
+    enemySpreadMultiplier: 0.5,
+  },
 }
 
-export const DIFFICULTY_ORDER: DifficultyId[] = ['easy', 'normal', 'hard']
+export const DIFFICULTY_ORDER: DifficultyId[] = ['easy', 'normal', 'hard', 'extreme']
 
 export function isValidDifficulty(value: unknown): value is DifficultyId {
-  return value === 'easy' || value === 'normal' || value === 'hard'
+  return value === 'easy' || value === 'normal' || value === 'hard' || value === 'extreme'
 }

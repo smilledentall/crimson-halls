@@ -42,6 +42,7 @@ import { createWeapon } from '../weapons/Weapon'
 import type { Weapon, WeaponContext } from '../weapons/Weapon'
 import { WeaponView } from '../weapons/WeaponView'
 import { WEAPONS, WEAPON_ORDER } from '../weapons/weapons.config'
+import { ALL_WEAPON_SPRITE_URLS } from '../weapons/weaponSprites'
 import type { WeaponId } from '../weapons/weapons.config'
 
 const BACKGROUND_COLOR = 0x0d0709
@@ -283,6 +284,8 @@ export class Engine {
 
     // Pré-carrega os sprites dos inimigos (chroma key) antes do primeiro nível.
     void preloadEnemySprites(ENEMY_SPRITE_URLS)
+    // Pré-carrega os sprites das armas (chroma key) para o viewmodel 3D.
+    void preloadEnemySprites(ALL_WEAPON_SPRITE_URLS)
 
     // Post-processing: bloom + vinheta.
     this.composer = new EffectComposer(this.renderer)

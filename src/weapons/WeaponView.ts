@@ -1,48 +1,120 @@
 import * as THREE from 'three'
+import { useGameStore } from '../state/gameStore'
+import { getSpriteEntry } from '../core/SpriteLoader'
+import type { WeaponId } from './weapons.config'
+import { WEAPON_SPRITE_URLS } from './weaponSprites'
 
 /**
- * Placeholder visual da arma na tela: um corpo + cano fixados no canto
- * inferior direito da câmera, com recuo ("recoil") e flash no cano ao
- * disparar. Será trocado por modelos reais depois, sem tocar o core.
+ * Visual da arma em primeira pessoa: um único plano fixo ancorado na câmera
+ * (canto inferior direito) exibindo a imagem da arma equipada. O fundo verde
+ * das imagens é removido pelo mesmo processo usado nos inimigos (SpriteLoader).
+ * Ao trocar de arma só trocamos a textura do material — sem criar 5 objetos.
  */
+
+interface WeaponFrameConfig {
+  /** Altura do sprite em unidades de mundo (largura = altura × aspect). */
+  height: number
+  /** Offset de posição do plano relativo ao ancoramento base. */
+  offsetX?: number
+  offsetY?: number
+  offsetZ?: number
+  /** Rotação do plano no eixo Z (radianos), para alinhar o enquadramento. */
+  rotationZ?: number
+  /** Posição do cano (muzzle flash) relativa ao ancoramento base. */
+  flashX?: number
+  flashY?: number
+  flashZ?: number
+}
+
+/** Ajuste individual por arma para a troca (1-5) não parecer um salto. */
+const FRAME: Record<WeaponId, WeaponFrameConfig> = {
+  pistol: {
+    height: 0.42,
+    offsetX: 0,
+    offsetY: 0,
+    offsetZ: 0,
+    rotationZ: 0,
+    flashX: 0,
+    flashY: 0.06,
+    flashZ: -0.6,
+  },
+  shotgun: {
+    height: 0.5,
+    offsetX: 0,
+    offsetY: -0.02,
+    offsetZ: 0,
+    rotationZ: 0,
+    flashX: 0,
+    flashY: 0.04,
+    flashZ: -0.62,
+  },
+  rifle: {
+    height: 0.48,
+    offsetX: 0,
+    offsetY: -0.01,
+    offsetZ: 0,
+    rotationZ: 0,
+    flashX: 0,
+    flashY: 0.05,
+    flashZ: -0.62,
+  },
+  rocket: {
+    height: 0.44,
+    offsetX: 0,
+    offsetY: 0.02,
+    offsetZ: 0,
+    rotationZ: 0,
+    flashX: 0,
+    flashY: 0.03,
+    flashZ: -0.66,
+  },
+  chainsaw: {
+    height: 0.5,
+    offsetX: 0,
+    offsetY: -0.02,
+    offsetZ: 0,
+    rotationZ: 0,
+    flashX: 0,
+    flashY: 0.02,
+    flashZ: -0.58,
+  },
+}
+
 export class WeaponView {
   readonly group: THREE.Group
+  private readonly plane: THREE.Mesh
+  private readonly planeMaterial: THREE.MeshBasicMaterial
   private readonly flash: THREE.Sprite
   private readonly flashMaterial: THREE.SpriteMaterial
   private recoil = 0
+  private lastWeaponId: WeaponId | null = null
   private readonly basePosition: THREE.Vector3
 
   constructor(camera: THREE.PerspectiveCamera) {
     this.group = new THREE.Group()
 
-    const metal = new THREE.MeshStandardMaterial({
-      color: 0x2b2b2e,
-      roughness: 0.6,
-      metalness: 0.4,
+    // Um único plano + material: a textura muda conforme a arma equipada.
+    this.planeMaterial = new THREE.MeshBasicMaterial({
+      map: null,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
     })
-    const darkMetal = new THREE.MeshStandardMaterial({
-      color: 0x1c1c1f,
-      roughness: 0.5,
-      metalness: 0.6,
-    })
-
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.55), metal)
-    this.group.add(body)
-
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8), darkMetal)
-    barrel.rotation.x = Math.PI / 2
-    barrel.position.set(0, 0.02, -0.45)
-    this.group.add(barrel)
+    this.plane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.planeMaterial)
+    this.plane.renderOrder = 999
+    this.plane.scale.set(0.5, 0.5, 1)
+    this.group.add(this.plane)
 
     this.flashMaterial = new THREE.SpriteMaterial({
       color: 0xffd27a,
       transparent: true,
       opacity: 0,
       blending: THREE.AdditiveBlending,
+      depthTest: false,
       depthWrite: false,
     })
     this.flash = new THREE.Sprite(this.flashMaterial)
-    this.flash.position.set(0, 0.02, -0.72)
+    this.flash.renderOrder = 1000
     this.flash.scale.setScalar(0.001)
     this.group.add(this.flash)
 
@@ -50,9 +122,47 @@ export class WeaponView {
     this.group.position.copy(this.basePosition)
 
     camera.add(this.group)
+    this.applyWeapon(useGameStore.getState().currentWeaponId)
+  }
+
+  /** Troca a textura/escala/posição para a arma dada (sem recriar o plano). */
+  private applyWeapon(weaponId: WeaponId): void {
+    const frame = FRAME[weaponId]
+    const url = WEAPON_SPRITE_URLS[weaponId]
+    const entry = getSpriteEntry(url)
+
+    this.planeMaterial.map = entry?.texture ?? null
+    this.planeMaterial.needsUpdate = true
+
+    const height = frame.height
+    const width = height * (entry?.aspect ?? 1)
+    this.plane.scale.set(width, height, 1)
+    this.plane.position.set(
+      this.basePosition.x + (frame.offsetX ?? 0),
+      this.basePosition.y + (frame.offsetY ?? 0),
+      this.basePosition.z + (frame.offsetZ ?? 0),
+    )
+    this.plane.rotation.z = frame.rotationZ ?? 0
+
+    this.flash.position.set(
+      this.basePosition.x + (frame.flashX ?? 0),
+      this.basePosition.y + (frame.flashY ?? 0),
+      this.basePosition.z + (frame.flashZ ?? 0),
+    )
   }
 
   update(dt: number): void {
+    const weaponId = useGameStore.getState().currentWeaponId
+    // Reaplica quando a textura ainda não estava pronta (pré-load assíncrono).
+    if (this.planeMaterial.map === null && this.lastWeaponId === null) {
+      this.applyWeapon(weaponId)
+    }
+    if (weaponId !== this.lastWeaponId) {
+      this.lastWeaponId = weaponId
+      this.applyWeapon(weaponId)
+    }
+
+    // Recuo: empurra o grupo para trás/baixo e anima o flash do cano.
     this.recoil = Math.max(0, this.recoil - dt * 8)
     this.group.position.x = this.basePosition.x + this.recoil * 0.02
     this.group.position.y = this.basePosition.y + this.recoil * 0.02
@@ -67,13 +177,7 @@ export class WeaponView {
 
   dispose(): void {
     this.flashMaterial.dispose()
-    this.group.traverse(child => {
-      if (child instanceof THREE.Mesh) {
-        child.geometry.dispose()
-        const material = child.material
-        if (Array.isArray(material)) material.forEach(m => m.dispose())
-        else material.dispose()
-      }
-    })
+    this.planeMaterial.dispose()
+    this.plane.geometry.dispose()
   }
 }

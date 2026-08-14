@@ -45,6 +45,17 @@ export async function getLevelTextures(levelId: string): Promise<LevelTextures> 
     'level-3b-path': 'B-3',
     'level-4': '4',
     'level-5': '5',
+    // Fases da expansão reutilizam os conjuntos existentes por variação.
+    'level-6': '5',
+    'level-7': 'A-3',
+    'level-8': 'B-3',
+    'level-9': '4',
+    'level-10': '5',
+    'level-11': 'A-3',
+    'level-12': 'B-3',
+    'level-13': '4',
+    'level-14': '5',
+    'level-15': 'A-3',
   }
 
   let baseName = textureNames[levelId]

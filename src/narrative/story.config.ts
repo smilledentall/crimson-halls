@@ -56,6 +56,76 @@ export const LEVEL_INTROS: Record<string, LevelIntro> = {
       'Se eu não voltar, queimem os registros.',
     ],
   },
+  'level-6': {
+    title: 'Caldeiras de Lava',
+    lines: [
+      'O calor sobe dos andares que ninguém cartografou.',
+      'Algo com asas patrulha os poços de fogo.',
+    ],
+  },
+  'level-7': {
+    title: 'Galerias dos Enxames',
+    lines: [
+      'Eles se movem como uma única criatura.',
+      'Não existe "um" — existe a multidão.',
+    ],
+  },
+  'level-8': {
+    title: 'Santuário dos Escudos',
+    lines: [
+      'As armas fracas ricocheteiam na escuridão.',
+      'Troveja lá dentro. Troveja e espera.',
+    ],
+  },
+  'level-9': {
+    title: 'Alturas de Crimson',
+    lines: [
+      'O teto sumiu. Só restou o vôo deles.',
+      'Não olhe para baixo — o andar não tem fim.',
+    ],
+  },
+  'level-10': {
+    title: 'Forja de Obsidiana',
+    lines: [
+      'As paredes negras ainda guardam o calor da forja.',
+      'Aqui o metal aprendeu a andar.',
+    ],
+  },
+  'level-11': {
+    title: 'Salões Assombrados',
+    lines: [
+      'Cada porta repete o eco de um nome.',
+      'Os vivos aqui são apenas convidados.',
+    ],
+  },
+  'level-12': {
+    title: 'Necrópole de Obsidiana',
+    lines: [
+      'As tumbas foram abertas. E devolvidas.',
+      'O que enterraram em Crimson nunca dormiu.',
+    ],
+  },
+  'level-13': {
+    title: 'Antessala do Núcleo',
+    lines: [
+      'O ar vibra perto do coração do prédio.',
+      'Estou mais perto do que qualquer registro.',
+    ],
+  },
+  'level-14': {
+    title: 'Salões do Fim',
+    lines: [
+      'As tochas aqui queimam roxo.',
+      'Não há portas de volta a partir daqui.',
+    ],
+  },
+  'level-15': {
+    title: 'Núcleo de Crimson',
+    lines: [
+      'O centro. A razão de tudo isto existir.',
+      'Fecha o registro. Queime o resto.',
+    ],
+  },
 }
 
 /** Notas de lore encontradas nas salas secretas. Chave = id do nível. */
