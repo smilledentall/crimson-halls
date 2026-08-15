@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import {
   clonedCeilingTexture,
   clonedFloorTexture,
+  clonedLavaTexture,
   clonedWallTexture,
 } from './Textures'
 
@@ -15,6 +16,8 @@ export interface LevelTextures {
   wall: THREE.Texture
   floor: THREE.Texture
   ceiling: THREE.Texture
+  /** True quando o chão do nível é lava (chão emissivo). */
+  lavaFloor?: boolean
 }
 
 const textureCache = new Map<string, LevelTextures>()
@@ -58,6 +61,9 @@ export async function getLevelTextures(levelId: string): Promise<LevelTextures> 
     'level-15': 'A-3',
   }
 
+  // Níveis com chão de lava (caldeiras): chão emissivo gerado proceduralmente.
+  const lavaFloorLevels = new Set(['level-6'])
+
   let baseName = textureNames[levelId]
   if (!baseName) {
     // Para salas secretas e outros níveis sem textura própria, tenta
@@ -98,9 +104,12 @@ export async function getLevelTextures(levelId: string): Promise<LevelTextures> 
     }
   }
 
+  const isLavaFloor = lavaFloorLevels.has(levelId)
+
   textures.wall = await loadOrFallback('parede')
-  textures.floor = await loadOrFallback('chao')
+  textures.floor = isLavaFloor ? clonedLavaTexture(1, 1) : await loadOrFallback('chao')
   textures.ceiling = await loadOrFallback('teto')
+  if (isLavaFloor) textures.lavaFloor = true
 
   const finalTextures = textures as LevelTextures
   textureCache.set(levelId, finalTextures)

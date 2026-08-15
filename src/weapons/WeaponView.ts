@@ -6,77 +6,73 @@ import { WEAPON_SPRITE_URLS } from './weaponSprites'
 
 /**
  * Visual da arma em primeira pessoa: um único plano fixo ancorado na câmera
- * (canto inferior direito) exibindo a imagem da arma equipada. O fundo verde
- * das imagens é removido pelo mesmo processo usado nos inimigos (SpriteLoader).
+ * (centro inferior, estilo Doom) exibindo a imagem da arma equipada com o
+ * cano apontando na direção da mira central. O fundo verde das imagens é
+ * removido pelo mesmo processo usado nos inimigos (SpriteLoader).
  * Ao trocar de arma só trocamos a textura do material — sem criar 5 objetos.
+ * O plano é filho direto do grupo ancorado na câmera e fica SEMPRE com rotação
+ * identidade (0,0,0): reto, de frente para a câmera, sem billboard dinâmico.
  */
 
 interface WeaponFrameConfig {
   /** Altura do sprite em unidades de mundo (largura = altura × aspect). */
   height: number
-  /** Offset de posição do plano relativo ao ancoramento base. */
+  /** Ajuste fino de posição do plano relativo ao ancoramento base. */
   offsetX?: number
   offsetY?: number
   offsetZ?: number
-  /** Rotação do plano no eixo Z (radianos), para alinhar o enquadramento. */
-  rotationZ?: number
   /** Posição do cano (muzzle flash) relativa ao ancoramento base. */
   flashX?: number
   flashY?: number
   flashZ?: number
 }
 
-/** Ajuste individual por arma para a troca (1-5) não parecer um salto. */
+/** Ajuste individual por arma: mesmo enquadramento centralizado na base. */
 const FRAME: Record<WeaponId, WeaponFrameConfig> = {
   pistol: {
-    height: 0.42,
+    height: 0.3,
     offsetX: 0,
     offsetY: 0,
     offsetZ: 0,
-    rotationZ: 0,
     flashX: 0,
-    flashY: 0.06,
-    flashZ: -0.6,
+    flashY: 0.14,
+    flashZ: -0.16,
   },
   shotgun: {
-    height: 0.5,
-    offsetX: 0,
-    offsetY: -0.02,
-    offsetZ: 0,
-    rotationZ: 0,
-    flashX: 0,
-    flashY: 0.04,
-    flashZ: -0.62,
-  },
-  rifle: {
-    height: 0.48,
+    height: 0.3,
     offsetX: 0,
     offsetY: -0.01,
     offsetZ: 0,
-    rotationZ: 0,
     flashX: 0,
-    flashY: 0.05,
-    flashZ: -0.62,
+    flashY: 0.12,
+    flashZ: -0.16,
+  },
+  rifle: {
+    height: 0.3,
+    offsetX: 0,
+    offsetY: 0,
+    offsetZ: 0,
+    flashX: 0,
+    flashY: 0.13,
+    flashZ: -0.16,
   },
   rocket: {
-    height: 0.44,
+    height: 0.32,
     offsetX: 0,
-    offsetY: 0.02,
+    offsetY: 0,
     offsetZ: 0,
-    rotationZ: 0,
     flashX: 0,
-    flashY: 0.03,
-    flashZ: -0.66,
+    flashY: 0.12,
+    flashZ: -0.18,
   },
   chainsaw: {
-    height: 0.5,
+    height: 0.3,
     offsetX: 0,
-    offsetY: -0.02,
+    offsetY: -0.01,
     offsetZ: 0,
-    rotationZ: 0,
     flashX: 0,
-    flashY: 0.02,
-    flashZ: -0.58,
+    flashY: 0.12,
+    flashZ: -0.16,
   },
 }
 
@@ -102,6 +98,8 @@ export class WeaponView {
     })
     this.plane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.planeMaterial)
     this.plane.renderOrder = 999
+    // Rotação identidade: o plano fica sempre reto, de frente para a câmera.
+    this.plane.rotation.set(0, 0, 0)
     this.plane.scale.set(0.5, 0.5, 1)
     this.group.add(this.plane)
 
@@ -118,7 +116,8 @@ export class WeaponView {
     this.flash.scale.setScalar(0.001)
     this.group.add(this.flash)
 
-    this.basePosition = new THREE.Vector3(0.34, -0.3, -0.6)
+    this.basePosition = new THREE.Vector3(0.05, -0.18, -0.55)
+    // O grupo carrega o ancoramento; o plano/flash ficam na origem + ajustes.
     this.group.position.copy(this.basePosition)
 
     camera.add(this.group)
@@ -138,26 +137,28 @@ export class WeaponView {
     const width = height * (entry?.aspect ?? 1)
     this.plane.scale.set(width, height, 1)
     this.plane.position.set(
-      this.basePosition.x + (frame.offsetX ?? 0),
-      this.basePosition.y + (frame.offsetY ?? 0),
-      this.basePosition.z + (frame.offsetZ ?? 0),
+      frame.offsetX ?? 0,
+      frame.offsetY ?? 0,
+      frame.offsetZ ?? 0,
     )
-    this.plane.rotation.z = frame.rotationZ ?? 0
+    this.plane.rotation.set(0, 0, 0)
 
     this.flash.position.set(
-      this.basePosition.x + (frame.flashX ?? 0),
-      this.basePosition.y + (frame.flashY ?? 0),
-      this.basePosition.z + (frame.flashZ ?? 0),
+      frame.flashX ?? 0,
+      frame.flashY ?? 0,
+      frame.flashZ ?? 0,
     )
   }
 
   update(dt: number): void {
     const weaponId = useGameStore.getState().currentWeaponId
-    // Reaplica quando a textura ainda não estava pronta (pré-load assíncrono).
-    if (this.planeMaterial.map === null && this.lastWeaponId === null) {
-      this.applyWeapon(weaponId)
-    }
-    if (weaponId !== this.lastWeaponId) {
+    const url = WEAPON_SPRITE_URLS[weaponId]
+    const entry = getSpriteEntry(url)
+    const texture = entry?.texture ?? null
+    // Aplica quando troca de arma OU quando a textura do sprite fica pronta
+    // (pré-load assíncrono): sem isso, a arma inicial nasce em branco e só
+    // "acende" após uma troca manual de arma.
+    if (weaponId !== this.lastWeaponId || (texture !== null && this.planeMaterial.map !== texture)) {
       this.lastWeaponId = weaponId
       this.applyWeapon(weaponId)
     }

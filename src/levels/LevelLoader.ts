@@ -349,10 +349,17 @@ export class LevelLoader {
 
     const floorGeo = new THREE.PlaneGeometry(bounds.maxX, bounds.maxZ)
     floorGeo.rotateX(-Math.PI / 2)
-    const floor = new THREE.Mesh(
-      floorGeo,
-      new THREE.MeshStandardMaterial({ map: floorTexture, roughness: 0.95, metalness: 0 }),
-    )
+    const floorMaterial = textures.lavaFloor
+      ? new THREE.MeshStandardMaterial({
+          map: floorTexture,
+          roughness: 0.6,
+          metalness: 0.2,
+          emissive: new THREE.Color(0xff5a1a),
+          emissiveMap: floorTexture,
+          emissiveIntensity: 0.9,
+        })
+      : new THREE.MeshStandardMaterial({ map: floorTexture, roughness: 0.95, metalness: 0 })
+    const floor = new THREE.Mesh(floorGeo, floorMaterial)
     floor.position.set(bounds.maxX / 2, 0, bounds.maxZ / 2)
     group.add(floor)
 

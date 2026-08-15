@@ -143,6 +143,70 @@ function createCeilingTexture(): THREE.CanvasTexture {
   return toTexture(canvasFrom(ctx))
 }
 
+/** Lava: crosta escura rachada com magma incandescente (usada em caldeiras). */
+function createLavaTexture(): THREE.CanvasTexture {
+  const size = 256
+  const [, ctx] = createCanvas(size)
+
+  // Crosta basal escura.
+  ctx.fillStyle = '#140b08'
+  ctx.fillRect(0, 0, size, size)
+
+  // Manchas de magma de fundo (radiais), espalhadas antes das rachaduras.
+  for (let i = 0; i < 22; i++) {
+    const x = Math.random() * size
+    const y = Math.random() * size
+    const r = 14 + Math.random() * 30
+    const hue = 15 + Math.random() * 20 // 15 (laranja) a 35 (amarelo)
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r)
+    grad.addColorStop(0, `hsla(${hue}, 95%, ${48 + Math.random() * 15}%, 0.55)`)
+    grad.addColorStop(0.5, `hsla(${hue - 8}, 90%, 30%, 0.35)`)
+    grad.addColorStop(1, 'rgba(20, 8, 4, 0)')
+    ctx.fillStyle = grad
+    ctx.fillRect(x - r, y - r, r * 2, r * 2)
+  }
+
+  // Rede de rachaduras de magma: caminhos aleatórios grossos e brilhantes.
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  for (let i = 0; i < 60; i++) {
+    let x = Math.random() * size
+    let y = Math.random() * size
+    const steps = 4 + Math.floor(Math.random() * 6)
+    const width = 1 + Math.random() * 3
+    const glow = Math.random() * 0.7 + 0.3
+    ctx.shadowBlur = 6 + Math.random() * 8
+    ctx.shadowColor = 'rgba(255, 90, 10, 0.9)'
+    ctx.strokeStyle = `hsla(${20 + Math.random() * 20}, 95%, ${40 + Math.random() * 40}%, ${glow})`
+    ctx.lineWidth = width
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    for (let s = 0; s < steps; s++) {
+      x += (Math.random() - 0.5) * 46
+      y += (Math.random() - 0.5) * 46
+      ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+  }
+  ctx.shadowBlur = 0
+
+  // Centros incandescentes amarelo-brancos sobre as rachaduras.
+  for (let i = 0; i < 26; i++) {
+    const x = Math.random() * size
+    const y = Math.random() * size
+    const r = 2 + Math.random() * 5
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r)
+    grad.addColorStop(0, 'rgba(255, 240, 190, 0.9)')
+    grad.addColorStop(0.5, 'rgba(255, 150, 40, 0.6)')
+    grad.addColorStop(1, 'rgba(255, 80, 0, 0)')
+    ctx.fillStyle = grad
+    ctx.fillRect(x - r, y - r, r * 2, r * 2)
+  }
+
+  addNoise(ctx, size, 16)
+  return toTexture(canvasFrom(ctx))
+}
+
 function canvasFrom(ctx: CanvasRenderingContext2D): HTMLCanvasElement {
   return ctx.canvas
 }
@@ -156,6 +220,7 @@ function canvasFrom(ctx: CanvasRenderingContext2D): HTMLCanvasElement {
 let cachedWall: THREE.CanvasTexture | null = null
 let cachedFloor: THREE.CanvasTexture | null = null
 let cachedCeiling: THREE.CanvasTexture | null = null
+let cachedLava: THREE.CanvasTexture | null = null
 
 export function getWallTexture(): THREE.CanvasTexture {
   if (!cachedWall) cachedWall = createWallTexture()
@@ -187,6 +252,18 @@ export function clonedFloorTexture(repeatX: number, repeatY: number): THREE.Canv
 
 export function clonedCeilingTexture(repeatX: number, repeatY: number): THREE.CanvasTexture {
   const texture = getCeilingTexture().clone()
+  texture.repeat.set(repeatX, repeatY)
+  return texture
+}
+
+export function getLavaTexture(): THREE.CanvasTexture {
+  if (!cachedLava) cachedLava = createLavaTexture()
+  return cachedLava
+}
+
+/** Versão clonada com repeat próprio (para não alterar a textura compartilhada). */
+export function clonedLavaTexture(repeatX: number, repeatY: number): THREE.CanvasTexture {
+  const texture = getLavaTexture().clone()
   texture.repeat.set(repeatX, repeatY)
   return texture
 }

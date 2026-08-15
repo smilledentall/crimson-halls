@@ -16,6 +16,8 @@ const MAX_DISTANCE = 80
  * Projétil disparado por inimigos à distância: viaja em linha reta,
  * morre ao bater em parede ou estourar o tempo de vida.
  * A colisão com o jogador é verificada pela engine.
+ * Renderizado com material não-iluminado + blending aditivo e fog desligado
+ * para ser visível mesmo em níveis escuros e a longa distância.
  */
 export class Projectile {
   readonly mesh: THREE.Mesh
@@ -29,12 +31,15 @@ export class Projectile {
   constructor(config: ProjectileConfig) {
     this.damage = config.damage
 
-    const material = new THREE.MeshStandardMaterial({
+    const material = new THREE.MeshBasicMaterial({
       color: 0xff5533,
-      emissive: 0xff2200,
-      emissiveIntensity: 1.2,
+      transparent: true,
+      opacity: 1,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
     })
-    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), material)
+    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), material)
     this.mesh.position.copy(config.origin)
 
     const direction = new THREE.Vector3().subVectors(config.target, config.origin).normalize()

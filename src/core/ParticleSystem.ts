@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import vertexShader from '../shaders/particleVertex.glsl?raw'
+import fragmentShader from '../shaders/particleFragment.glsl?raw'
 
 export interface BurstSpec {
   position: THREE.Vector3
@@ -44,6 +46,8 @@ export class ParticleSystem {
   private readonly geometry: THREE.BufferGeometry
   private readonly positions: Float32Array
   private readonly colors: Float32Array
+  private readonly sizes: Float32Array
+  private readonly alphas: Float32Array
   private readonly pool: Particle[] = []
   private cursor = 0
   private anyActive = false
@@ -57,8 +61,12 @@ export class ParticleSystem {
   constructor(scene: THREE.Scene) {
     this.positions = new Float32Array(MAX_PARTICLES * 3)
     this.colors = new Float32Array(MAX_PARTICLES * 3)
+    this.sizes = new Float32Array(MAX_PARTICLES)
+    this.alphas = new Float32Array(MAX_PARTICLES)
     for (let i = 0; i < MAX_PARTICLES; i++) {
       this.positions[i * 3 + 1] = HIDDEN_Y
+      this.sizes[i] = 0.06
+      this.alphas[i] = 0
       this.pool.push({
         index: i,
         active: false,
@@ -75,14 +83,15 @@ export class ParticleSystem {
     this.geometry = new THREE.BufferGeometry()
     this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3))
     this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3))
+    this.geometry.setAttribute('size', new THREE.BufferAttribute(this.sizes, 1))
+    this.geometry.setAttribute('alpha', new THREE.BufferAttribute(this.alphas, 1))
 
-    const material = new THREE.PointsMaterial({
-      size: 0.06,
-      sizeAttenuation: true,
-      vertexColors: true,
+    const material = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
       transparent: true,
-      blending: THREE.AdditiveBlending,
       depthWrite: false,
+      blending: THREE.AdditiveBlending,
     })
     this.points = new THREE.Points(this.geometry, material)
     this.points.frustumCulled = false
@@ -214,6 +223,8 @@ export class ParticleSystem {
     this.anyActive = remaining
     this.geometry.attributes.position.needsUpdate = true
     this.geometry.attributes.color.needsUpdate = true
+    this.geometry.attributes.size.needsUpdate = true
+    this.geometry.attributes.alpha.needsUpdate = true
   }
 
   dispose(): void {
@@ -232,5 +243,7 @@ export class ParticleSystem {
     this.colors[i] = p.color.r
     this.colors[i + 1] = p.color.g
     this.colors[i + 2] = p.color.b
+    this.sizes[p.index] = p.size
+    this.alphas[p.index] = p.active ? Math.max(0, Math.min(1, p.life / p.maxLife)) : 0
   }
 }

@@ -775,6 +775,14 @@ body {
   font-size: 11px;
 }
 
+.touch-recenter {
+  width: 64px;
+  height: 64px;
+  left: 132px;
+  bottom: 140px;
+  font-size: 11px;
+}
+
 /* ---------- HUD em telas pequenas ---------- */
 
 @media (max-width: 720px) {

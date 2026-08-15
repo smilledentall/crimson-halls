@@ -12,6 +12,8 @@ import rangedSprite from '../../assets/sprites/Ranged.jpeg'
 import kamikazeSprite from '../../assets/sprites/Kamikaze.jpeg'
 import tankSprite from '../../assets/sprites/Tanque.jpeg'
 import bossSprite from '../../assets/sprites/Boss-Thane.jpeg'
+import flyingSprite from '../../assets/sprites/flying.png'
+import runnerSprite from '../../assets/sprites/runner.png'
 
 /**
  * Catálogo de variações de inimigo. Cada tipo é um conjunto de dados;
@@ -33,6 +35,8 @@ export interface EnemyTypeDefinition {
   /** Blindagem: reduz dano de armas com dano abaixo de armorMinDamage. */
   armorMinDamage?: number
   armorReduction?: number
+  /** Escudo destrutível: absorve dano até ser quebrado (Shielded). */
+  shield?: number
   /** Explosivo (kamikaze): explode ao tocar o jogador ou ao morrer. */
   explodesOnDeath?: boolean
   explosionRadius?: number
@@ -55,6 +59,8 @@ export const ENEMY_SPRITE_URLS: string[] = [
   kamikazeSprite,
   tankSprite,
   bossSprite,
+  flyingSprite,
+  runnerSprite,
 ]
 
 export const ENEMY_TYPES: EnemyTypeDefinition[] = [
@@ -70,7 +76,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     retreatRange: 0,
     ranged: false,
     reward: 3,
-    sprite: chaserSprite,
+    sprite: runnerSprite,
     spriteHeight: 2.0,
   },
   {
@@ -157,6 +163,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     ranged: false,
     armorMinDamage: 20,
     armorReduction: 0.5,
+    shield: 60,
     meshScale: 1.2,
     color: 0x888888,
     reward: 8,
@@ -177,7 +184,7 @@ export const ENEMY_TYPES: EnemyTypeDefinition[] = [
     meshScale: 1.0,
     color: 0x555555,
     reward: 5,
-    sprite: chaserSprite,
+    sprite: flyingSprite,
     spriteHeight: 2.0,
   },
   {

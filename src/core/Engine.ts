@@ -2,7 +2,11 @@ import * as THREE from 'three'
 import { AudioManager } from './AudioManager'
 import { CollisionSystem } from './CollisionSystem'
 import { InputManager } from './InputManager'
-import { preloadEnemySprites } from './SpriteLoader'
+import { InputManagerMobile } from './InputManagerMobile'
+import { isTouchDevice } from './device'
+import { getCroppedTexture, getSpriteEntry, getSpriteEntryAsync, preloadEnemySprites } from './SpriteLoader'
+import type { SpriteEntry } from './SpriteLoader'
+import { ALL_DOOR_SPRITE_URLS, DOOR_SPRITE_URLS } from '../doors/doorSprites'
 import { LIGHTING_CONFIG } from './lighting.config'
 import { ParticleSystem } from './ParticleSystem'
 import { computeSplashDamage } from './splash'
@@ -48,6 +52,7 @@ import type { WeaponId } from '../weapons/weapons.config'
 const BACKGROUND_COLOR = 0x0d0709
 const STEP_INTERVAL = 0.35 // segundos entre sons de passos
 const DOOR_INTERACT_RANGE = 2.4
+const DOOR_WIDTH = 2.4
 const TRANSITION_DURATION = 0.35
 const DOOR_LABEL_RANGE = 28
 const DOOR_LABEL_FADE = 16
@@ -206,6 +211,16 @@ export class Engine {
     this.input?.setVirtualFire(held)
   }
 
+  /** Recentra a mira por inclinação (mobile). Sem efeito em desktop. */
+  recenterTilt(): void {
+    if (this.input instanceof InputManagerMobile) this.input.recenterTilt()
+  }
+
+  /** Pede permissão de sensores (iOS) e ativa a mira por inclinação. */
+  enableTiltLook(): void {
+    if (this.input instanceof InputManagerMobile) void this.input.requestSensorPermission()
+  }
+
   init(container: HTMLElement): void {
     if (this.initialized) return
     this.container = container
@@ -286,6 +301,8 @@ export class Engine {
     void preloadEnemySprites(ENEMY_SPRITE_URLS)
     // Pré-carrega os sprites das armas (chroma key) para o viewmodel 3D.
     void preloadEnemySprites(ALL_WEAPON_SPRITE_URLS)
+    // Pré-carrega os sprites das portas (chroma key).
+    void preloadEnemySprites(ALL_DOOR_SPRITE_URLS)
 
     // Post-processing: bloom + vinheta.
     this.composer = new EffectComposer(this.renderer)
@@ -300,9 +317,13 @@ export class Engine {
     this.composer.addPass(new OutputPass())
     this.composer.addPass(new ShaderPass(VIGNETTE_SHADER))
 
-    this.input = new InputManager(this.renderer.domElement, locked =>
-      this.handlePointerLockChange(locked),
-    )
+    this.input = isTouchDevice()
+      ? new InputManagerMobile(this.renderer.domElement, locked =>
+          this.handlePointerLockChange(locked),
+        )
+      : new InputManager(this.renderer.domElement, locked =>
+          this.handlePointerLockChange(locked),
+        )
     this.player = new Player(this.collision)
 
     this.weaponView = new WeaponView(this.camera)
@@ -472,6 +493,7 @@ export class Engine {
 
       if (this.player.getIsMoving() && this.clock.elapsedTime - this.lastStepTime > STEP_INTERVAL) {
         this.audio.play('step')
+        this.spawnFootstepDust()
         this.lastStepTime = this.clock.elapsedTime
       }
 
@@ -1001,6 +1023,25 @@ export class Engine {
       gravity: 7,
       lift: 0.3,
       color: new THREE.Color(0xb0a08c),
+    })
+  }
+
+  /** Poeira levantada pelos pés ao andar. */
+  private spawnFootstepDust(): void {
+    if (!this.particles || !this.player) return
+    const px = this.player.position.x + (Math.random() * 2 - 1) * 0.15
+    const pz = this.player.position.z + (Math.random() * 2 - 1) * 0.15
+    this.particles.spawnBurst({
+      position: new THREE.Vector3(px, 0.08, pz),
+      count: 4,
+      direction: new THREE.Vector3(0, 0.4, 0),
+      speed: 0.9,
+      spread: 0.7,
+      size: 0.05,
+      life: 0.5,
+      gravity: 1.5,
+      lift: 0.2,
+      color: new THREE.Color(0x8a8278),
     })
   }
 
@@ -1596,7 +1637,7 @@ export class Engine {
     }
   }
 
-  /** Monta o objeto 3D de uma porta (marco + plano luminoso + label). */
+  /** Monta o objeto 3D de uma porta (plano texturizado + label). */
   private buildDoorMesh(
     x: number,
     z: number,
@@ -1606,34 +1647,44 @@ export class Engine {
     label: string,
   ): THREE.Group {
     const group = new THREE.Group()
-    const frameMat = new THREE.MeshStandardMaterial({
-      color: secret ? 0x3a1a2a : bossLocked ? 0x3a3a20 : 0x2a2020,
-      roughness: 0.9,
-      metalness: 0.2,
-    })
     const glowColor = secret ? 0xe04aff : 0x35e0c0
-    const glowMat = new THREE.MeshStandardMaterial({
-      color: 0x1a3a34,
+    const doorMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false,
       emissive: glowColor,
-      emissiveIntensity: 0.2,
-      roughness: 0.5,
+      emissiveMap: null,
+      emissiveIntensity: 0.5,
+      roughness: 0.7,
+      metalness: 0.1,
     })
-    this.doorGlowMaterials.push({ material: glowMat, secret, requires, bossLocked })
+    this.doorGlowMaterials.push({ material: doorMat, secret, requires, bossLocked })
 
-    const postGeo = new THREE.BoxGeometry(0.5, WALL_HEIGHT, 0.5)
-    const left = new THREE.Mesh(postGeo, frameMat)
-    left.position.set(x - 1.2, WALL_HEIGHT / 2, z)
-    const right = new THREE.Mesh(postGeo, frameMat)
-    right.position.set(x + 1.2, WALL_HEIGHT / 2, z)
-    const lintelGeo = new THREE.BoxGeometry(3, 0.5, 0.5)
-    const lintel = new THREE.Mesh(lintelGeo, frameMat)
-    lintel.position.set(x, WALL_HEIGHT - 0.25, z)
+    const planeGeo = new THREE.PlaneGeometry(1, 1)
+    const glow = new THREE.Mesh(planeGeo, doorMat)
+    glow.position.set(x, 0, z)
+    group.add(glow)
 
-    const planeGeo = new THREE.BoxGeometry(2.4, WALL_HEIGHT - 0.5, 0.12)
-    const glow = new THREE.Mesh(planeGeo, glowMat)
-    glow.position.set(x, (WALL_HEIGHT - 0.5) / 2, z)
-
-    group.add(left, right, lintel, glow)
+    // Aplica a textura da porta (chroma key, recortada na arte) assim que
+    // estiver disponível e dimensiona o plano para preencher o vão.
+    const url = secret ? DOOR_SPRITE_URLS.secret : DOOR_SPRITE_URLS.campaign
+    const applyTexture = (entry: SpriteEntry | null) => {
+      if (!entry) return
+      const cropped = getCroppedTexture(entry) ?? entry.texture
+      doorMat.map = cropped
+      doorMat.emissiveMap = cropped
+      doorMat.needsUpdate = true
+      // A arte já inclui a moldura; dimensiona o plano pelo aspect da imagem
+      // (sem esticar nem cortar) para preencher o vão da porta.
+      const artAspect = cropped.image.width / cropped.image.height
+      const height = DOOR_WIDTH / artAspect
+      glow.scale.set(DOOR_WIDTH, height, 1)
+      glow.position.y = height / 2
+    }
+    const entry = getSpriteEntry(url)
+    if (entry) applyTexture(entry)
+    else void getSpriteEntryAsync(url).then(applyTexture)
 
     // Label do destino (billboard), na cor da porta (teal/magenta).
     if (label) {
@@ -1645,9 +1696,10 @@ export class Engine {
         opacity: 0,
       })
       const sprite = new THREE.Sprite(mat)
-      sprite.position.set(0, WALL_HEIGHT + 0.9, 0)
+      sprite.position.set(x, WALL_HEIGHT + 0.9, z)
+      const texAspect = texture.image.width / texture.image.height
       const textScale = Math.min(6, Math.max(2.6, label.length * 0.22))
-      sprite.scale.set(textScale, textScale * 0.19 + 0.35, 1)
+      sprite.scale.set(textScale, textScale / texAspect, 1)
       group.add(sprite)
       this.doorLabels.push({ material: mat, texture, x, z, secret, requires, bossLocked })
     }
@@ -1657,27 +1709,32 @@ export class Engine {
 
   /** Gera a textura de texto do label (com contorno escuro pra legibilidade). */
   private createDoorLabelTexture(text: string, color: string): THREE.CanvasTexture {
-    const width = 256
-    const height = 48
+    const fontSize = 40
+    const padX = 18
+    const height = 64
     const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
     const ctx = canvas.getContext('2d')
     if (!ctx) {
+      canvas.width = 256
+      canvas.height = height
       const texture = new THREE.CanvasTexture(canvas)
       texture.colorSpace = THREE.SRGBColorSpace
       return texture
     }
-    ctx.clearRect(0, 0, width, height)
-    ctx.font = 'bold 30px system-ui, sans-serif'
+    ctx.font = `bold ${fontSize}px system-ui, sans-serif`
+    const textWidth = ctx.measureText(text).width
+    const width = Math.max(256, Math.ceil(textWidth) + padX * 2)
+    canvas.width = width
+    canvas.height = height
+    ctx.font = `bold ${fontSize}px system-ui, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.lineJoin = 'round'
-    ctx.lineWidth = 7
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)'
-    ctx.strokeText(text, width / 2, height / 2 + 2)
+    ctx.lineWidth = 8
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.92)'
+    ctx.strokeText(text, width / 2, height / 2 + 1)
     ctx.fillStyle = color
-    ctx.fillText(text, width / 2, height / 2 + 2)
+    ctx.fillText(text, width / 2, height / 2 + 1)
     const texture = new THREE.CanvasTexture(canvas)
     texture.colorSpace = THREE.SRGBColorSpace
     return texture
@@ -1761,7 +1818,7 @@ export class Engine {
       const bright = entry.secret ? 0xe04aff : 0x35e0c0
       const dim = entry.secret ? 0x7a1a52 : 0x1a6a5c
       entry.material.emissive.setHex(unlocked ? bright : dim)
-      entry.material.emissiveIntensity = unlocked ? 0.9 : 0.18
+      entry.material.emissiveIntensity = unlocked ? 0.45 : 0.12
     }
   }
 
@@ -1769,7 +1826,7 @@ export class Engine {
   private pulseDoors(dt: number): void {
     if (this.doorGlowMaterials.length === 0) return
     this.flickerTime += dt
-    const pulse = 0.7 + 0.3 * Math.sin(this.flickerTime * 3)
+    const pulse = 0.35 + 0.15 * Math.sin(this.flickerTime * 3)
     for (const entry of this.doorGlowMaterials) {
       if (this.doorUnlocked(entry)) entry.material.emissiveIntensity = pulse
     }

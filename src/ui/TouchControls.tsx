@@ -126,6 +126,14 @@ export function TouchControls({ engine }: { engine: Engine }) {
       >
         ARMA
       </button>
+
+      <button
+        className="touch-button touch-recenter"
+        onPointerDown={event => event.preventDefault()}
+        onClick={() => engine.recenterTilt()}
+      >
+        MIRA
+      </button>
     </div>
   )
 }

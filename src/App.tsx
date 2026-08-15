@@ -32,7 +32,10 @@ export function App({ engine }: AppProps) {
 
   useEffect(() => {
     const container = containerRef.current
-    if (container && !engine.isInitialized()) engine.init(container)
+    if (container && !engine.isInitialized()) {
+      engine.init(container)
+      if (isTouchDevice()) engine.enableTiltLook()
+    }
     return () => {
       engine.dispose()
     }
