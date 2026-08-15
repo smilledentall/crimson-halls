@@ -6,6 +6,8 @@ import type { LevelTextures } from '../core/LevelTextureLoader'
 
 export const TILE_SIZE = 6 // metros por célula do grid
 export const WALL_HEIGHT = 3.2
+/** Distância da parede adjacente para encostar o cresset (tocha de corredor). */
+const CRESSET_WALL_OFFSET = 0.5
 
 /** Ajusta as UVs de uma caixa para que a textura tila a cada `tileSize` metros,
  *  evitando esticamento em paredes de comprimentos variados. */
@@ -241,9 +243,18 @@ export class LevelLoader {
             const wallBelow = row < rows - 1 && definition.grid[row + 1]?.[col] === '#'
             const wallLeft = col > 0 && definition.grid[row][col - 1] === '#'
             const wallRight = col < definition.grid[row].length - 1 && definition.grid[row][col + 1] === '#'
+            // Desloca o cresset para perto da parede adjacente (como uma tocha
+            // de corredor), em vez de deixá-lo no centro da célula obstruindo
+            // o caminho. Sem parede ao lado, mantém centralizado.
+            let fx = cx
+            let fz = cz
+            if (wallLeft && !wallRight) fx = x + CRESSET_WALL_OFFSET
+            else if (wallRight && !wallLeft) fx = x + TILE_SIZE - CRESSET_WALL_OFFSET
+            if (wallAbove && !wallBelow) fz = z + CRESSET_WALL_OFFSET
+            else if (wallBelow && !wallAbove) fz = z + TILE_SIZE - CRESSET_WALL_OFFSET
             cressets.push({
-              x: cx,
-              z: cz,
+              x: fx,
+              z: fz,
               // Montado na parede se toca um '#'; senão, em pé no chão.
               mounted: wallAbove || wallBelow || wallLeft || wallRight,
               // Luz embutida: o cresset é a única fonte de tocha do jogo.

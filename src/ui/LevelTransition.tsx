@@ -15,7 +15,7 @@ export function LevelTransition() {
       <p className="game-subtitle">
         {isCustomLevel
           ? 'Nível customizado concluído. Ele pode ser exportado para uso posterior.'
-          : 'Você escapou dos corredores de Crimson Halls.'}
+          : 'Você escapou dos corredores de Crimson Lead.'}
       </p>
       <button className="menu-button" onClick={returnToMenu} autoFocus>
         Menu Principal

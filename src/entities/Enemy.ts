@@ -54,6 +54,8 @@ export class Enemy {
   readonly maxHealth: number
   alive = true
   state: EnemyState = 'idle'
+  /** True após levar dano: persegue o jogador mesmo fora do alcance de detecção. */
+  protected alerted = false
   /** True quando o inimigo já detonou sua explosão (kamikaze). */
   exploded = false
   /** Id do spawn no nível atual (persistência de sessão). */
@@ -247,6 +249,8 @@ export class Enemy {
 
   damage(amount: number): void {
     if (!this.alive) return
+    // Levar dano acorda o inimigo mesmo longe/fora de linha de visão.
+    this.alerted = true
     this.health = Math.max(0, this.health - amount)
     this.flashTimer = FLASH_DURATION
     const ratio = this.maxHealth > 0 ? this.health / this.maxHealth : 0
@@ -320,7 +324,10 @@ export class Enemy {
       playerPos.z,
     )
 
-    if (hasLineOfSight && distance <= AGGRO_RANGE) {
+    // Agressão: por detecção normal (linha de visão + alcance) OU após levar
+    // dano (alerted) — um tiro à distância acorda o inimigo e o faz avançar,
+    // independente da distância até o jogador.
+    if (this.alerted || (hasLineOfSight && distance <= AGGRO_RANGE)) {
       if (this.shouldRetreat(distance)) {
         this.state = 'retreating'
         this.move(-1, dx, dz, distance, dt, world)

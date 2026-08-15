@@ -33,7 +33,7 @@ interface Particle {
   gravity: number
 }
 
-const MAX_PARTICLES = 900
+const MAX_PARTICLES = 1500
 const HIDDEN_Y = -1000
 
 /**
@@ -169,9 +169,40 @@ export class ParticleSystem {
 
   /** Emissor contínuo de chama (cressets): partículas nascem na abertura da
    *  taça, sobem uma distância curta com pouca dispersão lateral (labareda).
-   *  Chame uma vez por frame por fonte; `intensity` escala a taxa de emissão. */
+   *  Chame uma vez por frame por fonte; `intensity` escala a taxa de emissão.
+   *
+   *  Duas camadas: um núcleo denso/brilhante no centro (maior, mais lento,
+   *  mais vida) dá o "corpo" da chama, e labaredas menores ao redor sobem
+   *  mais rápido — profundidade visual sem explodir a contagem de partículas.
+   */
   spawnFlame(position: THREE.Vector3, intensity = 1): void {
-    const rate = Math.round((1.2 + Math.random() * 0.6) * this.quality * intensity)
+    const scale = this.quality * intensity
+
+    // Núcleo da chama: 1 a cada ~2 frames, maior e mais lento, vida longa.
+    if (Math.random() < 0.55 * scale) {
+      const core = this.pool[this.cursor]
+      this.cursor = (this.cursor + 1) % MAX_PARTICLES
+      core.active = true
+      core.position.set(
+        position.x + (Math.random() * 2 - 1) * 0.02,
+        position.y + Math.random() * 0.05,
+        position.z + (Math.random() * 2 - 1) * 0.02,
+      )
+      core.velocity.set(
+        (Math.random() * 2 - 1) * 0.1,
+        0.5 + Math.random() * 0.3,
+        (Math.random() * 2 - 1) * 0.1,
+      )
+      core.maxLife = 0.55 + Math.random() * 0.25
+      core.life = core.maxLife
+      core.size = 0.17
+      core.gravity = 0.2
+      core.color.copy(new THREE.Color(1, 0.75 + Math.random() * 0.2, 0.35 + Math.random() * 0.15))
+      this.syncParticle(core)
+    }
+
+    // Labaredas: mais partículas, menores, sobem mais rápido e mais alto.
+    const rate = Math.round((2.2 + Math.random() * 0.8) * scale)
     for (let i = 0; i < rate; i++) {
       const p = this.pool[this.cursor]
       this.cursor = (this.cursor + 1) % MAX_PARTICLES
@@ -184,14 +215,14 @@ export class ParticleSystem {
       )
       // Sobe quase vertical, com dispersão lateral mínima (chama fina).
       p.velocity.set(
-        (Math.random() * 2 - 1) * 0.18,
-        0.55 + Math.random() * 0.45,
-        (Math.random() * 2 - 1) * 0.18,
+        (Math.random() * 2 - 1) * 0.2,
+        0.9 + Math.random() * 0.5,
+        (Math.random() * 2 - 1) * 0.2,
       )
       // Vida curta: a labareda sobe pouco e some.
-      p.maxLife = 0.3 + Math.random() * 0.25
+      p.maxLife = 0.35 + Math.random() * 0.2
       p.life = p.maxLife
-      p.size = 0.08
+      p.size = 0.11
       p.gravity = 0.4 // leve desaceleração — não sobe como balão
       // Núcleo amarelo esbranquiçado, ponta mais alaranjada.
       const t = Math.random()

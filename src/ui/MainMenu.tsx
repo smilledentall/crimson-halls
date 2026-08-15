@@ -14,7 +14,7 @@ export function MainMenu() {
 
   return (
     <div className="menu screen">
-      <h1 className="game-title">CRIMSON HALLS</h1>
+      <h1 className="game-title">CRIMSON LEAD</h1>
       <p className="game-subtitle">Você está preso nos corredores de Crimson.</p>
 
       {hasProgress && (

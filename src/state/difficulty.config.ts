@@ -44,7 +44,7 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultyConfig> = {
   normal: {
     id: 'normal',
     name: 'Normal',
-    description: 'A experiência padrão de Crimson Halls.',
+    description: 'A experiência padrão de Crimson Lead.',
     playerDamageReceived: 1,
     enemyHealth: 1,
     pickupAmmoMultiplier: 1,

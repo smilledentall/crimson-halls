@@ -66,6 +66,8 @@ export class ShieldedEnemy extends Enemy {
 
   damage(amount: number): void {
     if (!this.alive) return
+    // Um tiro acorda mesmo com o escudo absorvendo o dano.
+    this.alerted = true
 
     if (this.hasShield()) {
       const overflow = amount - this.shieldHealth

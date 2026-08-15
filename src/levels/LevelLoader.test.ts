@@ -147,10 +147,15 @@ describe('LevelLoader', () => {
         gridX.length,
       )
       for (const cresset of parsed.cressets) {
-        // Posição = centro da célula X correspondente.
+        // Cresset dentro da célula X correspondente (pode ser deslocado para
+        // perto da parede adjacente, não precisa estar no centro exato).
         expect(
           gridX.some(
-            ([c, r]) => cresset.x === c * TILE_SIZE + TILE_SIZE / 2 && cresset.z === r * TILE_SIZE + TILE_SIZE / 2,
+            ([c, r]) =>
+              cresset.x >= c * TILE_SIZE &&
+              cresset.x <= c * TILE_SIZE + TILE_SIZE &&
+              cresset.z >= r * TILE_SIZE &&
+              cresset.z <= r * TILE_SIZE + TILE_SIZE,
           ),
           `nível ${level.id}: cresset em (${cresset.x},${cresset.z}) tem célula X`,
         ).toBe(true)

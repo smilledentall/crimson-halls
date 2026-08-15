@@ -1,4 +1,4 @@
-# Crimson Halls
+# Crimson Lead
 
 Um FPS estilo *Doom clássico* rodando no navegador, em primeira pessoa, com uma base modular e extensível — armas, inimigos, níveis e efeitos são definidos por dados (configs) sem tocar no core.
 

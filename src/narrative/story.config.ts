@@ -1,15 +1,15 @@
 /**
- * Narrativa central de Crimson Halls — textos separados da lógica de
+ * Narrativa central de Crimson Lead — textos separados da lógica de
  * apresentação para edição sem tocar no código.
  *
- * Premissa: o jogador é um Registrador (arquivista) enviado a Crimson Halls,
+ * Premissa: o jogador é um Registrador (arquivista) enviado a Crimson Lead,
  * uma instituição que virou um labirinto autônomo. O Thane foi o primeiro
  * prisioneiro — e também a porta que o lugar mantém trancada por dentro.
  */
 
 export const PREMISE = {
-  player: 'Registrador de Crimson Halls',
-  world: 'Uma ala-asa do asilo/lar "Crimson Halls" que aprendeu a se reconfigurar.',
+  player: 'Registrador de Crimson Lead',
+  world: 'Uma ala-asa do asilo/lar "Crimson Lead" que aprendeu a se reconfigurar.',
   threat: 'O Thane, o primeiro prisioneiro, tornou-se o guardião — e a chave.',
 }
 
@@ -133,7 +133,7 @@ export const SECRET_NOTES: Record<string, string> = {
   'level-1b-secret':
     'Nota de enfermeira: "Eles não estão mortos. Estão apenas descontentes. Não os alimente depois da meia-noite."',
   'level-2b-secret':
-    'Diário do Warden: "Descobri por que chamam de Halls. Cada porta leva a um lugar que existiu antes. Ou depois."',
+    'Diário do Warden: "Descobri por que chamam de Lead. Cada porta leva a um lugar que existiu antes. Ou depois."',
   'level-3c-secret':
     'Inscrição na parede: "Quem coleciona o sangue de Crimson não enxerga o próprio reflexo."',
   'level-4b-secret':
@@ -151,6 +151,6 @@ export function getSecretNote(levelId: string): string {
 export const EPILOGUE: string[] = [
   'O Thane cai, e com ele, o eco dos corredores.',
   'Os registros estão completos — ou o que resta deles.',
-  'Em algum lugar de Crimson Halls, as tochas continuam acesas.',
+  'Em algum lugar de Crimson Lead, as tochas continuam acesas.',
   'Esperando o próximo registro.',
 ]
