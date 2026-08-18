@@ -30,7 +30,7 @@ interface WeaponFrameConfig {
 /** Ajuste individual por arma: mesmo enquadramento centralizado na base. */
 const FRAME: Record<WeaponId, WeaponFrameConfig> = {
   pistol: {
-    height: 0.3,
+    height: 0.4,
     offsetX: 0,
     offsetY: 0,
     offsetZ: 0,
@@ -39,7 +39,7 @@ const FRAME: Record<WeaponId, WeaponFrameConfig> = {
     flashZ: -0.16,
   },
   shotgun: {
-    height: 0.3,
+    height: 0.4,
     offsetX: 0,
     offsetY: -0.01,
     offsetZ: 0,
@@ -48,7 +48,7 @@ const FRAME: Record<WeaponId, WeaponFrameConfig> = {
     flashZ: -0.16,
   },
   rifle: {
-    height: 0.3,
+    height: 0.4,
     offsetX: 0,
     offsetY: 0,
     offsetZ: 0,
@@ -57,7 +57,7 @@ const FRAME: Record<WeaponId, WeaponFrameConfig> = {
     flashZ: -0.16,
   },
   rocket: {
-    height: 0.32,
+    height: 0.4,
     offsetX: 0,
     offsetY: 0,
     offsetZ: 0,
@@ -66,7 +66,7 @@ const FRAME: Record<WeaponId, WeaponFrameConfig> = {
     flashZ: -0.18,
   },
   chainsaw: {
-    height: 0.3,
+    height: 0.4,
     offsetX: 0,
     offsetY: -0.01,
     offsetZ: 0,
@@ -116,7 +116,7 @@ export class WeaponView {
     this.flash.scale.setScalar(0.001)
     this.group.add(this.flash)
 
-    this.basePosition = new THREE.Vector3(0.05, -0.18, -0.55)
+    this.basePosition = new THREE.Vector3(0.05, -0.2, -0.55)
     // O grupo carrega o ancoramento; o plano/flash ficam na origem + ajustes.
     this.group.position.copy(this.basePosition)
 
