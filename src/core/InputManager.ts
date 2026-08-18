@@ -135,7 +135,7 @@ export class InputManager {
 
   /**
    * Vetor de movimento: joystick virtual (touch) tem prioridade quando ativo;
-   * senão, as teclas (EAXF: E=frente, A=esquerda, X=trás, F=direita).
+   * senão, as teclas (WASD: W=frente, A=esquerda, S=trás, D=direita).
    * Retorna { x, z } com x+ = direita e z+ = frente.
    */
   getMoveVector(): InputVector {
@@ -144,8 +144,8 @@ export class InputManager {
     if (Math.hypot(jx, jz) > JOYSTICK_DEADZONE) {
       return { x: clamp(jx, -1, 1), z: clamp(jz, -1, 1) }
     }
-    const x = (this.isKeyDown('KeyF') ? 1 : 0) - (this.isKeyDown('KeyA') ? 1 : 0)
-    const z = (this.isKeyDown('KeyE') ? 1 : 0) - (this.isKeyDown('KeyX') ? 1 : 0)
+    const x = (this.isKeyDown('KeyD') ? 1 : 0) - (this.isKeyDown('KeyA') ? 1 : 0)
+    const z = (this.isKeyDown('KeyW') ? 1 : 0) - (this.isKeyDown('KeyS') ? 1 : 0)
     return { x, z }
   }
 
@@ -163,6 +163,11 @@ export class InputManager {
 
   isVirtualFire(): boolean {
     return this.virtualFireHeld
+  }
+
+  /** Verifica se a tecla de escudo (Q) foi pressionada neste frame. */
+  isShieldKeyDown(): boolean {
+    return this.keysDown.has('KeyQ')
   }
 
   // ---- Mira por acelerômetro/giroscópio (mobile) ----

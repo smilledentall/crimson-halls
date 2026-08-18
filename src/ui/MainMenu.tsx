@@ -52,7 +52,7 @@ export function MainMenu() {
       </div>
 
       <div className="controls-hint">
-        <p>EAXF — mover &nbsp;·&nbsp; Mouse — olhar &nbsp;·&nbsp; Shift — correr</p>
+        <p>WASD — mover &nbsp;·&nbsp; Mouse — olhar &nbsp;·&nbsp; Shift — correr</p>
         <p>G — interagir (portas) &nbsp;·&nbsp; L — lanterna &nbsp;·&nbsp; P — pausar</p>
       </div>
 

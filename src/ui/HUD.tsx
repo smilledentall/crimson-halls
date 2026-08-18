@@ -30,6 +30,9 @@ export function HUD() {
   const colorblindMode = useGameStore(state => state.colorblindMode)
   const hudFontSize = useGameStore(state => state.hudFontSize)
   const flashlightEnabled = useGameStore(state => state.flashlightEnabled)
+  const isShieldActive = useGameStore(state => state.isShieldActive)
+  const shieldTimeRemaining = useGameStore(state => state.shieldTimeRemaining)
+  const shieldCooldownRemaining = useGameStore(state => state.shieldCooldownRemaining)
 
   const weapon = WEAPONS[currentWeaponId]
   const infiniteAmmo = weapon.ammoCapacity === 0
@@ -94,6 +97,17 @@ export function HUD() {
         <span className="flashlight-icon">{flashlightEnabled ? '\u{1F4A1}' : '\u{1F635}'}</span>
         Lanterna: {flashlightEnabled ? 'ON' : 'OFF'}
         <span className="flashlight-key">[L]</span>
+      </div>
+
+      <div className={`shield-indicator${isShieldActive ? ' active' : shieldCooldownRemaining > 0 ? ' cooldown' : ''}`}>
+        <span className="shield-icon">🛡️</span>
+        {isShieldActive ? (
+          <>Escudo: {shieldTimeRemaining.toFixed(1)}s</>
+        ) : shieldCooldownRemaining > 0 ? (
+          <>Recarga: {shieldCooldownRemaining.toFixed(1)}s</>
+        ) : (
+          <>Escudo: [Q]</>
+        )}
       </div>
 
       {levelCleared && <div className="sector-clear-banner">SETOR LIMPO</div>}

@@ -292,6 +292,42 @@ body {
   opacity: 0.7;
 }
 
+.shield-indicator {
+  position: absolute;
+  top: 72px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  font-size: calc(12px * var(--hud-scale));
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.shield-indicator.active {
+  color: #4ad3ff;
+  border-color: rgba(74, 211, 255, 0.35);
+  background: rgba(4, 20, 40, 0.45);
+}
+
+.shield-indicator.cooldown {
+  color: #888;
+  border-color: rgba(136, 136, 136, 0.35);
+  background: rgba(20, 20, 20, 0.45);
+}
+
+.shield-indicator:not(.active):not(.cooldown) {
+  color: #aaa;
+  border-color: rgba(170, 170, 170, 0.25);
+  background: rgba(10, 10, 10, 0.35);
+}
+
+.shield-icon {
+  font-size: calc(14px * var(--hud-scale));
+}
+
 /* ---------- Menus ---------- */
 
 .menu {

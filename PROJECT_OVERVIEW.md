@@ -4,7 +4,7 @@
 
 **Crimson Lead** é um jogo FPS (first-person shooter) estilo *Doom clássico* que roda inteiramente no navegador. O foco é uma base modular e extensível onde armas, inimigos, níveis, efeitos de partículas e progressão são definidos por **dados de configuração** (TypeScript objects/arrays) sem alterar o core da engine. O jogo combina:
 
-- **Gameplay**: movimentação em primeira pessoa (EAXF), mira por mouse/pointer-lock, 5 armas, 5 tipos de inimigos, ondas de combate, portas/bosses, progressão de upgrades.
+- **Gameplay**: movimentação em primeira pessoa (WASD), mira por mouse/pointer-lock, 5 armas, 5 tipos de inimigos, ondas de combate, portas/bosses, progressão de upgrades.
 - **Editor de níveis 2D** integrado (acessível via `/#editor` ou menu) para criar/exportar grids de texto.
 - **Sistema de save/checkpoint** em `localStorage` com persistência de sessão por nível.
 - **Acessibilidade**: screen shake configurável, modo daltônico, tamanho de fonte do HUD.
@@ -78,7 +78,7 @@ src/
 ### Entidades (`src/entities/`)
 | Arquivo | Responsabilidade |
 |---------|------------------|
-| `Player.ts` | Movimento (EAXF), yaw/pitch, bob ao andar, colisão, vida, regeneração, aplicação na câmera |
+| `Player.ts` | Movimento (WASD), yaw/pitch, bob ao andar, colisão, vida, regeneração, aplicação na câmera |
 | `Enemy.ts` | Classe base: IA simples (persegue, atira, foge), animação de sprite (billboard), dano/morte, drops |
 | `EnemyTypes/` | 5 subtipos: `ChaserEnemy` (corre), `RangedEnemy` (atira projéteis), `KamikazeEnemy` (explode ao contato), `TankEnemy` (vida alta, lento), `FlyingEnemy` (voa), `BossEnemy` (arena final) |
 | `Pickup.ts` | Itens coletáveis: vida, munição, moeda, chave; animação flutuante |

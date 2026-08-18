@@ -31,7 +31,7 @@ npm run dev        # servidor de desenvolvimento (Vite) → http://localhost:517
 
 ## Controles
 
-- **EAXF** — mover (E = frente, A = esquerda, X = trás, F = direita)
+- **WASD** — mover (W = frente, A = esquerda, S = trás, D = direita)
 - **Mouse** — olhar/mirar (Pointer Lock)
 - **Shift** — correr
 - **1–5** — trocar arma

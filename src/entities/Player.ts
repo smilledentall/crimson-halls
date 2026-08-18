@@ -69,7 +69,7 @@ export class Player {
   }
 
   private updateMovement(dt: number, input: InputManager): void {
-    // Vetor do InputManager: teclas EAXF ou joystick virtual (x+ = direita, z+ = frente).
+    // Vetor do InputManager: teclas WASD ou joystick virtual (x+ = direita, z+ = frente).
     const move = input.getMoveVector()
     const moveX = move.x
     const moveZ = -move.z

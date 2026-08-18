@@ -170,7 +170,10 @@ export class CollisionSystem {
     const closestZ = clamp(cz, wall.minZ, wall.maxZ)
     const dx = cx - closestX
     const dz = cz - closestZ
-    return dx * dx + dz * dz <= radius * radius
+    const distSq = dx * dx + dz * dz
+    const radiusSq = radius * radius
+    const hit = distSq <= radiusSq
+    return hit
   }
 }
 

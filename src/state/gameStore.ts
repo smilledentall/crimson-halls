@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { PLAYER_CONFIG } from '../entities/player.config'
+import { SHIELD_CONFIG } from '../entities/shield.config'
 import type { WeaponId } from '../weapons/weapons.config'
 import { WEAPONS, WEAPON_ORDER } from '../weapons/weapons.config'
 import { applyWeaponUpgrades, weaponUpgradeCost } from '../weapons/weapon-upgrades'
@@ -58,12 +59,17 @@ export interface GameStore {
   noteModal: string | null
   /** Epílogo pós-chefe (texto de encerramento). */
   epilogue: string[] | null
-  /** True após o chefe ser derrotado (portas liberadas, saída disponível). */
+/** True após o chefe ser derrotado (portas liberadas, saída disponível). */
   victoryAvailable: boolean
-  /** Incrementado a cada nova corrida (novo jogo/continuar) — zera a sessão da engine. */
+  /** Incrementado a cada nova corrida (novo jogo/retry) — zera a sessão da engine. */
   runId: number
   /** Estado da lanterna (ligada/desligada) — momento de jogo, não persiste. */
   flashlightEnabled: boolean
+
+  // Escudo temporário.
+  isShieldActive: boolean
+  shieldTimeRemaining: number
+  shieldCooldownRemaining: number
 
   // Progressão persistente.
   currency: number
@@ -111,6 +117,11 @@ export interface GameStore {
   dismissEpilogue: () => void
   setVictoryAvailable: (available: boolean) => void
   setFlashlightState: (enabled: boolean) => void
+
+    // Escudo temporário.
+    activateShield: () => void
+    updateShieldTimers: (dt: number) => void
+
   enterDoor: (targetLevelId: string) => void
   setMouseSensitivity: (value: number) => void
   setInvertY: (value: boolean) => void
@@ -219,6 +230,11 @@ export const useGameStore = create<GameStore>(set => {
     victoryAvailable: false,
     runId: 0,
     flashlightEnabled: true,
+
+    // Escudo temporário.
+    isShieldActive: false,
+    shieldTimeRemaining: 0,
+    shieldCooldownRemaining: 0,
 
     currency: 0,
     weaponUpgrades: {},
@@ -446,7 +462,11 @@ export const useGameStore = create<GameStore>(set => {
         const multiplier = DIFFICULTIES[state.difficulty].playerDamageReceived
         const reduction =
           1 - DAMAGE_REDUCTION_PER_LEVEL * (state.skillUpgrades.damageReduction ?? 0)
-        const total = amount * multiplier * Math.max(0.1, reduction)
+        // Escudo temporário: multiplicador adicional de redução de dano se ativo.
+        // shieldMultiplier = 0.25 significa 75% de redução (toma 25% do dano).
+        const shieldMultiplier = state.isShieldActive ? (1 - SHIELD_CONFIG.damageReduction) : 1
+        const effectiveMultiplier = Math.max(0.1, reduction * shieldMultiplier)
+        const total = amount * multiplier * effectiveMultiplier
         return { health: Math.max(0, state.health - Math.round(total)) }
       }),
 
@@ -552,5 +572,34 @@ export const useGameStore = create<GameStore>(set => {
         runId: state.runId + 1,
       }))
     },
+
+    // Escudo temporário.
+    activateShield: () =>
+      set(state => {
+        // Ignora se já ativo ou em cooldown.
+        if (state.isShieldActive || state.shieldCooldownRemaining > 0) return state
+        return {
+          isShieldActive: true,
+          shieldTimeRemaining: SHIELD_CONFIG.duration,
+          shieldCooldownRemaining: SHIELD_CONFIG.cooldown,
+        }
+      }),
+
+    /** Decrementa timers do escudo (chamado a cada frame pela Engine). */
+    updateShieldTimers: (dt: number) =>
+      set(state => {
+        if (!state.isShieldActive && state.shieldCooldownRemaining <= 0) return state
+        const next = { ...state }
+        if (next.isShieldActive) {
+          next.shieldTimeRemaining = Math.max(0, next.shieldTimeRemaining - dt)
+          if (next.shieldTimeRemaining <= 0) {
+            next.isShieldActive = false
+          }
+        }
+        if (next.shieldCooldownRemaining > 0) {
+          next.shieldCooldownRemaining = Math.max(0, next.shieldCooldownRemaining - dt)
+        }
+        return next
+      }),
   }
 })

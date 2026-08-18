@@ -40,7 +40,7 @@ import {
 } from '../state/progression.config'
 import { SPEED_PER_LEVEL } from '../state/progression.config'
 import { applyWeaponUpgrades } from '../weapons/weapon-upgrades'
-import { getSecretNote, LEVEL_INTROS } from '../narrative/story.config'
+import { getSecretNote, LEVEL_INTROS, EPILOGUE } from '../narrative/story.config'
 import type { LevelAtmosphere } from '../levels/LevelLoader'
 import { createWeapon } from '../weapons/Weapon'
 import type { Weapon, WeaponContext } from '../weapons/Weapon'
@@ -149,6 +149,8 @@ export class Engine {
   private flashlight: THREE.SpotLight | null = null
   private flashlightEnabled = true
   private flashlightKeyHeld = false
+  private shieldKeyHeld = false
+  private prevShieldActive = false
   private lastBossPct = -1
   private activeSummons = 0
   private regenTimer = 0
@@ -518,6 +520,7 @@ export class Engine {
       }
 
       this.updateRegen(dt)
+      this.updateShieldTimers(dt)
 
       this.updateWeapons(dt)
       this.processWaves(dt)
@@ -528,6 +531,8 @@ export class Engine {
       this.handleWeaponSwitchKeys()
       this.handlePauseKey()
       this.handleFlashlightKey()
+      this.handleShieldKey()
+      this.updateShieldAudio()
       this.updateCombatMusic()
       this.updateDoorInteraction()
       this.updateLeverInteraction()
@@ -880,6 +885,11 @@ export class Engine {
     if (store.health < maxHealthFor(store.skillUpgrades)) {
       store.pickupHealth(1)
     }
+  }
+
+  /** Atualiza timers do escudo (duração ativa + cooldown). */
+  private updateShieldTimers(dt: number): void {
+    useGameStore.getState().updateShieldTimers(dt)
   }
 
   /** Processa o spawn das ondas de inimigos (nível 5). */
@@ -1281,6 +1291,27 @@ export class Engine {
     useGameStore.getState().setFlashlightState(this.flashlightEnabled)
   }
 
+  /** Tecla Q ativa escudo (edge trigger) se não estiver ativo nem em cooldown. */
+  private handleShieldKey(): void {
+    const pressed = this.input?.isShieldKeyDown() ?? false
+    if (pressed && !this.shieldKeyHeld) {
+      useGameStore.getState().activateShield()
+    }
+    this.shieldKeyHeld = pressed
+  }
+
+  /** Toca som de ativação/desativação do escudo nas transições de estado. */
+  private updateShieldAudio(): void {
+    const store = useGameStore.getState()
+    const active = store.isShieldActive
+    if (active && !this.prevShieldActive) {
+      this.audio.play('shield_activate')
+    } else if (!active && this.prevShieldActive) {
+      this.audio.play('shield_deactivate')
+    }
+    this.prevShieldActive = active
+  }
+
   /** Detecta a porta mais próxima do jogador e expõe o prompt no store. */
   private updateDoorInteraction(): void {
     if (!this.player) return
@@ -1344,11 +1375,11 @@ export class Engine {
       const door = store.interactableDoor
       if (door && !door.locked && LEVELS_BY_ID[door.targetLevelId]) {
         if (door.targetLevelId === VICTORY_LEVEL_ID) {
-          // Porta de saída da campanha: encerra a missão direto na tela de
-          // vitória (créditos em scroll), que já inclui o texto do epílogo.
+          // Porta de saída da campanha: mostra o epílogo primeiro,
+          // depois o jogador fecha e vai para os créditos (via dismissEpilogue).
           this.audio.play('door')
           useGameStore.getState().setVictoryAvailable(false)
-          useGameStore.getState().completeLevel()
+          useGameStore.getState().setEpilogue(EPILOGUE)
         } else {
           this.beginTransition(door.targetLevelId)
         }

@@ -32,6 +32,8 @@ export type SfxName =
   | 'flashlight_click'
   | 'boss_roar'
   | 'fireplace'
+  | 'shield_activate'
+  | 'shield_deactivate'
   // Enemy-specific sounds (mapped to actual .wav files in assets/sounds/)
   | 'chaser_death'
   | 'chaser_damage'
@@ -72,6 +74,9 @@ const SFX_NAMES: SfxName[] = [
   'lever',
   'flashlight_click',
   'boss_roar',
+  'fireplace',
+  'shield_activate',
+  'shield_deactivate',
   // Enemy-specific sounds
   'chaser_death',
   'chaser_damage',
@@ -570,6 +575,14 @@ export class AudioManager {
     fireplace: dest => {
       this.playNoiseBurst(0.4, 0.25, 900, dest)
       this.playTone(70, 0.35, 0.12, 'sine', dest, 45)
+    },
+    shield_activate: dest => {
+      this.playTone(800, 0.1, 0.2, 'sine', dest)
+      this.playTone(1200, 0.15, 0.15, 'sine', dest, 1600)
+    },
+    shield_deactivate: dest => {
+      this.playTone(600, 0.15, 0.15, 'sine', dest)
+      this.playTone(400, 0.2, 0.1, 'sine', dest, 200)
     },
     // Enemy-specific sounds (fallback procedural - real files loaded from assets/sounds/)
     chaser_death: dest => {
