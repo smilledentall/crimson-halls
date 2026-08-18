@@ -2,7 +2,8 @@ import { isTouchDevice } from './device'
 
 /**
  * Gerencia teclado, mouse (incluindo Pointer Lock) e entrada virtual de
- * touch (joystick, arrastar para olhar, botão de tiro).
+ * touch (joystick, arrastar para olhar, botão de tiro), além de mira por
+ * acelerômetro/giroscópio (controles mobile).
  * A engine apenas consulta este módulo; ele não depende de React nem da engine.
  */
 
@@ -30,6 +31,16 @@ export class InputManager {
   private virtualMove: InputVector = { x: 0, z: 0 }
   private virtualLook: MouseDelta = { x: 0, y: 0 }
   private virtualFireHeld = false
+
+  // Mira por acelerômetro/giroscópio (mobile): o aparelho funciona como um
+  // "volante" — a inclinação em relação à posição neutra vira rotação da
+  // câmera. Segurar a inclinação continua girando a mira.
+  private tiltLookEnabled = false
+  private tiltNeutral: { beta: number; gamma: number } | null = null
+  private tiltLook: MouseDelta = { x: 0, y: 0 }
+
+  /** Sensibilidade da inclinação (unidades de look por grau). */
+  private readonly tiltSensitivity = 0.7
 
   constructor(domElement: HTMLElement, onPointerLockChange?: (locked: boolean) => void) {
     this.domElement = domElement
@@ -77,6 +88,18 @@ export class InputManager {
     if (!this.pointerLocked && !isTouchDevice()) this.requestPointerLock()
   }
 
+  private readonly handleOrientation = (event: DeviceOrientationEvent): void => {
+    const beta = event.beta ?? 0
+    const gamma = event.gamma ?? 0
+    if (!this.tiltNeutral) this.tiltNeutral = { beta, gamma }
+    const dGamma = gamma - this.tiltNeutral.gamma
+    const dBeta = beta - this.tiltNeutral.beta
+    // gamma: inclinar para os lados gira a câmera (horizontal).
+    // beta: inclinar para frente/trás olha para cima/baixo.
+    this.tiltLook.x = clamp(dGamma * this.tiltSensitivity, -3, 3)
+    this.tiltLook.y = clamp(-dBeta * this.tiltSensitivity, -3, 3)
+  }
+
   private attachListeners(): void {
     window.addEventListener('keydown', this.handleKeyDown)
     window.addEventListener('keyup', this.handleKeyUp)
@@ -97,6 +120,9 @@ export class InputManager {
     this.domElement.removeEventListener('mousedown', this.handleMouseDown)
     this.domElement.removeEventListener('click', this.handleClick)
     this.domElement.removeEventListener('contextmenu', this.handleContextMenu)
+    if (this.tiltLookEnabled) {
+      window.removeEventListener('deviceorientation', this.handleOrientation)
+    }
   }
 
   isKeyDown(code: string): boolean {
@@ -123,19 +149,44 @@ export class InputManager {
     return { x, z }
   }
 
-  /** Lê e zera o acumulado de olhar (mouse + arrasto de touch). */
+  /** Lê e zera o acumulado de olhar (mouse + arrasto de touch + inclinação). */
   consumeLookDelta(): MouseDelta {
     const delta = {
-      x: this.mouseDelta.x + this.virtualLook.x,
-      y: this.mouseDelta.y + this.virtualLook.y,
+      x: this.mouseDelta.x + this.virtualLook.x + this.tiltLook.x,
+      y: this.mouseDelta.y + this.virtualLook.y + this.tiltLook.y,
     }
     this.mouseDelta = { x: 0, y: 0 }
     this.virtualLook = { x: 0, y: 0 }
+    this.tiltLook = { x: 0, y: 0 }
     return delta
   }
 
   isVirtualFire(): boolean {
     return this.virtualFireHeld
+  }
+
+  // ---- Mira por acelerômetro/giroscópio (mobile) ----
+
+  /** Ativa a mira por inclinação: registra o listener e pede permissão (iOS). */
+  async enableTiltLook(): Promise<void> {
+    if (this.tiltLookEnabled) return
+    this.tiltLookEnabled = true
+    window.addEventListener('deviceorientation', this.handleOrientation)
+    const orient = DeviceOrientationEvent as unknown as {
+      requestPermission?: () => Promise<string>
+    }
+    if (typeof orient?.requestPermission === 'function') {
+      await orient.requestPermission()
+    }
+  }
+
+  /** Redefine a inclinação atual como posição neutra da mira. */
+  recenterTilt(): void {
+    this.tiltNeutral = null
+  }
+
+  isTiltLookEnabled(): boolean {
+    return this.tiltLookEnabled
   }
 
   // ---- Bridge para os controles virtuais (touch) ----

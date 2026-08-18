@@ -134,6 +134,14 @@ export function TouchControls({ engine }: { engine: Engine }) {
       >
         MIRA
       </button>
+
+      <button
+        className="touch-button touch-flashlight"
+        onPointerDown={event => event.preventDefault()}
+        onClick={() => engine.toggleFlashlight()}
+      >
+        LANTERNA
+      </button>
     </div>
   )
 }

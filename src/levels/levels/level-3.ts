@@ -9,7 +9,7 @@ import type { LevelDefinition } from '../LevelLoader'
 export const level3: LevelDefinition = {
   id: 'level-3',
   name: 'Profundezas de Crimson',
-  atmosphere: { fogColor: 0x33101a, ambientColor: 0xd8c0d0, fogFar: 140 },
+  atmosphere: { fogColor: 0x33101a, ambientColor: 0xd8c0d0, fogFar: 140, ambientIntensity: 0.25 },
   doors: [
     { marker: 'D1', targetLevelId: 'level-3a-path', label: 'Caminho da Cripta' },
     { marker: 'D2', targetLevelId: 'level-3b-path', label: 'Caminho das Gárgulas' },
@@ -27,8 +27,8 @@ grid: [
     '#P...H.X..#.........#.A..X...#',
     '#..E......#.........#...E....#',
     '#.........#....S....#........#',
-    '#.........#.....D...#........#',
-    '#.........#...X.....#........#',
+    '#.........#.........#........#',
+    '#.........#...X..D..#........#',
     '#.#######...#######.#.######.#',
     '#...XH.X..#.XA.........A....D#',
     '#..E......#....E.......HE....#',

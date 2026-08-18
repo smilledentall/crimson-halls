@@ -1,8 +1,6 @@
-// Vertex shader das partículas (fogo/explosão) com SIMULAÇÃO NA GPU:
-// cada partícula guarda apenas o estado de nascimento (posição, velocidade,
-// cor, tamanho, vida, gravidade, instante do spawn). A física (integração da
-// velocidade com gravidade, posição, desvanecimento da cor/alpha) é calculada
-// aqui, dirigida pelo relógio global uTime — a CPU só emite partículas.
+// Vertex shader das partículas de sangue com SIMULAÇÃO NA GPU:
+// integra posição/gravidade e encosta as gotas no chão (FLOOR_Y), onde elas
+// "empocam": param de cair, desvanecem devagar e arrastam um pouco.
 attribute vec3 birthPosition;
 attribute vec3 birthVelocity;
 attribute vec3 color;
@@ -12,6 +10,7 @@ attribute float gravity;
 attribute float birthTime;
 
 uniform float uTime;
+uniform float uFloorY;
 
 varying vec3 vColor;
 varying float vAlpha;
@@ -19,7 +18,6 @@ varying float vAlpha;
 void main() {
   float age = uTime - birthTime;
 
-  // Partícula ainda não emitida ou já morta: some (fora da tela, alpha 0).
   if (age < 0.0 || age > maxLife) {
     vColor = color;
     vAlpha = 0.0;
@@ -30,16 +28,23 @@ void main() {
 
   float t = age / maxLife;
 
-  // Integração: pos = birth + v*t - 0.5*g*t² (gravidade puxa para baixo).
   vec3 pos = birthPosition + birthVelocity * age;
   pos.y -= 0.5 * gravity * age * age;
 
-  // Desvanece como o sistema antigo (multiplicação por frame ≈ exp(-rate*t)).
-  vColor = color * exp(-5.0 * age);
+  // Ao tocar o chão: empoca — fica na FLOOR_Y e desvanece devagar.
+  float fadeRate;
+  if (pos.y <= uFloorY) {
+    pos.y = uFloorY;
+    fadeRate = 1.8;
+  } else {
+    fadeRate = 3.5;
+  }
+
+  vColor = color * exp(-fadeRate * age);
   vAlpha = 1.0 - t;
 
   vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
   float dist = max(-mvPosition.z, 0.5);
-  gl_PointSize = min(size * (240.0 / dist), 64.0);
+  gl_PointSize = min(size * (240.0 / dist), 48.0);
   gl_Position = projectionMatrix * mvPosition;
 }

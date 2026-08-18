@@ -1,9 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DoorDefinition, LevelDefinition } from '../levels/LevelLoader'
+import { humanizeLevelId } from '../levels/LevelLoader'
 import { LEVELS } from '../levels/levels'
 import { useGameStore } from '../state/gameStore'
 
-type EditorTool = 'wall' | 'floor' | 'player' | 'chaser' | 'shooter' | 'health' | 'ammo' | 'door' | 'cresset'
+type EditorTool =
+  | 'wall'
+  | 'floor'
+  | 'player'
+  | 'chaser'
+  | 'shooter'
+  | 'health'
+  | 'ammo'
+  | 'door'
+  | 'cresset'
+  | 'pillar'
 
 const TOOL_CHAR: Record<EditorTool, string> = {
   wall: '#',
@@ -15,6 +26,7 @@ const TOOL_CHAR: Record<EditorTool, string> = {
   ammo: 'A',
   door: 'D',
   cresset: 'X',
+  pillar: 'O',
 }
 
 const TOOLS: Array<{ id: EditorTool; char: string; label: string; color: string }> = [
@@ -27,6 +39,7 @@ const TOOLS: Array<{ id: EditorTool; char: string; label: string; color: string 
   { id: 'ammo', char: 'A', label: 'Munição', color: '#ffd24a' },
   { id: 'door', char: 'D', label: 'Porta', color: '#35e0c0' },
   { id: 'cresset', char: 'X', label: 'Cresset (luz)', color: '#ffb04a' },
+  { id: 'pillar', char: 'O', label: 'Pilar (quebra visão)', color: '#9b8f7e' },
 ]
 
 const CELL = 20
@@ -79,7 +92,7 @@ function buildDoors(grid: string[][], doorTargets: string[]): DoorDefinition[] {
         doors.push({
           marker: `D${index + 1}`,
           targetLevelId: doorTargets[index] ?? '',
-          label: doorTargets[index] || `Porta ${index + 1}`,
+          label: doorTargets[index] ? humanizeLevelId(doorTargets[index]) : `Porta ${index + 1}`,
         })
         index++
       }

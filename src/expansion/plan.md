@@ -14,9 +14,9 @@
   5. **Shaders de fogo e explosão** – customizados.
 
 ## Próximos passos
-1. Adicionar novos arquivos de nível e atualizar `src/levels/levels/index.ts`.
-2. Criar classes de inimigos em `src/entities/EnemyTypes` e registrar em `createEnemy`.
-3. Implementar nova dificuldade `extreme` em `src/state/difficulty.config.ts`.
-4. Criar shaders em `src/shaders` e integrá‑los no `ParticleSystem`.
-5. Substituir `ParticleSystem` por `three-gpu-particles`.
-6. Adicionar suporte a acelerômetro em `src/core/InputManager.ts`.
+1. Adicionar novos arquivos de nível e atualizar `src/levels/levels/index.ts`. ✅
+2. Criar classes de inimigos em `src/entities/EnemyTypes` e registrar em `createEnemy`. ✅
+3. Implementar nova dificuldade `extreme` em `src/state/difficulty.config.ts`. ✅
+4. Criar shaders em `src/shaders` e integrá‑los no `ParticleSystem`. ✅
+5. Substituir `ParticleSystem` por `three-gpu-particles`. ✅ (o pacote original de 2019 é incompatível com o three r180 — implementado como sistema GPU-accelerated próprio: a simulação de fogo/sangue/explosão/poeira roda nos vertex shaders dirigida pelo uniform `uTime`, e a CPU só emite partículas)
+6. Adicionar suporte a acelerômetro em `src/core/InputManager.ts`. ✅ (mira por inclinação `deviceorientation` com `enableTiltLook`/`recenterTilt`; `InputManagerMobile` apenas ativa o recurso herdado)

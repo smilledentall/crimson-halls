@@ -25,7 +25,7 @@ const FLASH_DURATION = 0.1
 const BAR_VISIBLE_TIME = 3
 const BAR_WIDTH = 128
 const BAR_HEIGHT = 12
-/** Altura máxima do sprite: cabe sob o teto (WALL_HEIGHT 3.2) com margem. */
+/** Altura máxima do sprite: cabe sob o teto (WALL_HEIGHT 5.0) com folga. */
 const MAX_SPRITE_HEIGHT = 2.9
 
 /** Modificadores de combate aplicados pela dificuldade ao spawnar. */

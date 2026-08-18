@@ -62,6 +62,8 @@ export interface GameStore {
   victoryAvailable: boolean
   /** Incrementado a cada nova corrida (novo jogo/continuar) — zera a sessão da engine. */
   runId: number
+  /** Estado da lanterna (ligada/desligada) — momento de jogo, não persiste. */
+  flashlightEnabled: boolean
 
   // Progressão persistente.
   currency: number
@@ -108,6 +110,7 @@ export interface GameStore {
   setEpilogue: (lines: string[] | null) => void
   dismissEpilogue: () => void
   setVictoryAvailable: (available: boolean) => void
+  setFlashlightState: (enabled: boolean) => void
   enterDoor: (targetLevelId: string) => void
   setMouseSensitivity: (value: number) => void
   setInvertY: (value: boolean) => void
@@ -215,6 +218,7 @@ export const useGameStore = create<GameStore>(set => {
     epilogue: null,
     victoryAvailable: false,
     runId: 0,
+    flashlightEnabled: true,
 
     currency: 0,
     weaponUpgrades: {},
@@ -334,6 +338,7 @@ export const useGameStore = create<GameStore>(set => {
         skillUpgrades: {},
         victoryAvailable: false,
         runId: state.runId + 1,
+        flashlightEnabled: true,
       }))
     },
 
@@ -359,6 +364,7 @@ export const useGameStore = create<GameStore>(set => {
         skillUpgrades: save.skillUpgrades ?? {},
         victoryAvailable: false,
         runId: state.runId + 1,
+        flashlightEnabled: true,
       }))
     },
 
@@ -367,6 +373,7 @@ export const useGameStore = create<GameStore>(set => {
         phase: 'playing',
         health: maxHealthFor(state.skillUpgrades),
         currentWeaponId: 'pistol',
+        flashlightEnabled: true,
       })),
 
     /** Vitória (nível final). Chamado pela engine após a morte do chefe. */
@@ -402,6 +409,7 @@ export const useGameStore = create<GameStore>(set => {
       useGameStore.getState().completeLevel()
     },
     setVictoryAvailable: available => set({ victoryAvailable: available }),
+    setFlashlightState: enabled => set({ flashlightEnabled: enabled }),
 
     enterDoor: targetLevelId =>
       set(state => {

@@ -9,6 +9,7 @@ import { LevelEditor } from './ui/LevelEditor'
 import { LevelIntro } from './ui/LevelIntro'
 import { LevelTransition } from './ui/LevelTransition'
 import { MainMenu } from './ui/MainMenu'
+import { Credits } from './ui/Credits'
 import { NoteModal } from './ui/NoteModal'
 import { PauseMenu } from './ui/PauseMenu'
 import { Settings } from './ui/Settings'
@@ -29,6 +30,7 @@ export function App({ engine }: AppProps) {
   const minimapRef = useRef<HTMLCanvasElement>(null)
   const phase = useGameStore(state => state.phase)
   const fade = useGameStore(state => state.fade)
+  const customLevel = useGameStore(state => state.customLevel)
 
   useEffect(() => {
     const container = containerRef.current
@@ -54,7 +56,8 @@ export function App({ engine }: AppProps) {
         {(phase === 'playing' || phase === 'paused') && <HUD />}
         {phase === 'paused' && <PauseMenu />}
         {phase === 'gameover' && <DeathScreen />}
-        {phase === 'victory' && <LevelTransition />}
+        {phase === 'victory' &&
+          (customLevel ? <LevelTransition /> : <Credits />)}
         {phase === 'editor' && <LevelEditor />}
         {phase === 'settings' && <Settings />}
         {phase === 'upgrade' && <Upgrades />}

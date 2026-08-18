@@ -53,7 +53,7 @@ export function MainMenu() {
 
       <div className="controls-hint">
         <p>EAXF — mover &nbsp;·&nbsp; Mouse — olhar &nbsp;·&nbsp; Shift — correr</p>
-        <p>G — interagir (portas) &nbsp;·&nbsp; P — pausar</p>
+        <p>G — interagir (portas) &nbsp;·&nbsp; L — lanterna &nbsp;·&nbsp; P — pausar</p>
       </div>
 
       <div className="credit-line">by ProgramaDinho</div>

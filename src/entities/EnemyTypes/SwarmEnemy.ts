@@ -84,6 +84,10 @@ export class SwarmEnemy extends Enemy {
     if (index !== -1) {
       formation.members.splice(index, 1)
       formation.offsets.splice(index, 1)
+      // Recalcula offsetIndex para todos os membros restantes após o splice.
+      for (let i = 0; i < formation.members.length; i++) {
+        formation.members[i].offsetIndex = i
+      }
     }
     if (formation.members.length === 0) {
       const fIndex = formations.indexOf(formation)

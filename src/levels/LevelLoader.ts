@@ -5,9 +5,204 @@ import { LIGHTING_CONFIG } from '../core/lighting.config'
 import type { LevelTextures } from '../core/LevelTextureLoader'
 
 export const TILE_SIZE = 6 // metros por célula do grid
-export const WALL_HEIGHT = 3.2
+export const WALL_HEIGHT = 5.0
 /** Distância da parede adjacente para encostar o cresset (tocha de corredor). */
 const CRESSET_WALL_OFFSET = 0.5
+/** Distância da face da parede para encostar o CENTRO do plano da porta.
+ *  O sprite é paralelo à parede (virado para o ambiente aberto), então o
+ *  centro precisa ficar NA face dela; um offset mínimo evita z-fighting
+ *  com a caixa da parede (a porta fica rente, sem espaço vazio). */
+const DOOR_WALL_OFFSET = 0.05
+
+/** Direções de parede candidatas, em ordem de prioridade de desempate.
+ *  Cada entrada: direção, delta (linha, coluna), rotação Y da porta (rad),
+ *  face da parede onde o centro da porta deve ficar (coordenada de mundo). */
+const DOOR_WALL_CANDIDATES = [
+  { dir: 'below', dr: 1, dc: 0, rot: Math.PI,     faceX: null, faceZ: (r: number) => (r + 1) * TILE_SIZE - DOOR_WALL_OFFSET }, // parede abaixo → face norte
+  { dir: 'above', dr: -1, dc: 0, rot: 0,          faceX: null, faceZ: (r: number) => r * TILE_SIZE + DOOR_WALL_OFFSET },     // parede acima  → face sul
+  { dir: 'right', dr: 0, dc: 1, rot: -Math.PI/2,  faceX: (c: number) => (c + 1) * TILE_SIZE - DOOR_WALL_OFFSET, faceZ: null }, // parede à dir. → face oeste
+  { dir: 'left',  dr: 0, dc: -1, rot: Math.PI/2,  faceX: (c: number) => c * TILE_SIZE + DOOR_WALL_OFFSET, faceZ: null },      // parede à esq. → face leste
+] as const
+
+/** Tipos de wall válidos para portas. */
+type DoorWallDir = 'below' | 'above' | 'right' | 'left'
+
+/**
+ * Determina a parede única onde a porta deve ser embutida, calcula posição
+ * (rente à face da parede) e rotação (face voltada para o lado aberto).
+ *
+ * Regra sistemática:
+ * 1. Coleta paredes adjacentes ('#') nas 4 direções.
+ * 2. Filtra apenas as que têm espaço aberto (não '#') do lado oposto —
+ *    a porta deve virar para onde se anda, não para a parede.
+ * 3. Se houver várias candidatas válidas, usa prioridade fixa S→N→E→O
+ *    (below → above → right → left) para escolha determinística.
+ * 4. Se nenhuma tem espaço aberto (porta num canto fechado), cai no primeiro
+ *    candidato da lista de prioridade (garante determinismo).
+ * 5. Retorna { x, z, rotationY, chosenWall }.
+ */
+export function computeDoorPlacement(
+  grid: string[],
+  row: number,
+  col: number,
+): { x: number; z: number; rotationY: number; chosenWall: DoorWallDir | 'none'; wallFaceX?: number; wallFaceZ?: number; doorCenterX: number; doorCenterZ: number } {
+  const rows = grid.length
+  const cols = grid[0].length
+  const cx = col * TILE_SIZE + TILE_SIZE / 2
+  const cz = row * TILE_SIZE + TILE_SIZE / 2
+
+  // Identifica quais das 4 direções têm parede adjacente
+  const hasWall: Record<DoorWallDir, boolean> = {
+    below: row < rows - 1 && grid[row + 1]?.[col] === '#',
+    above: row > 0 && grid[row - 1][col] === '#',
+    right: col < cols - 1 && grid[row][col + 1] === '#',
+    left:  col > 0 && grid[row][col - 1] === '#',
+  }
+
+  const candidates = DOOR_WALL_CANDIDATES.filter(c => hasWall[c.dir])
+
+  // Sem parede adjacente → porta flutuante (centralizada, olha para sul)
+  if (candidates.length === 0) {
+    return { x: cx, z: cz, rotationY: 0, chosenWall: 'none', doorCenterX: cx, doorCenterZ: cz }
+  }
+
+  // Para cada candidata, verifica se o lado oposto é andável (não '#')
+  const withOpenSide = candidates.map(c => {
+    const checkR = row + c.dr
+    const checkC = col + c.dc
+    const open = checkR >= 0 && checkR < rows && checkC >= 0 && checkC < cols && grid[checkR][checkC] !== '#'
+    return { ...c, open }
+  })
+
+  // Prefere paredes com lado aberto; se várias, prioridade S→N→E→O (ordem do array)
+  const valid = withOpenSide.filter(c => c.open)
+  const chosen = (valid.length > 0 ? valid : withOpenSide)[0]
+
+  // Calcula posição rente à face da parede escolhida
+  const x = chosen.faceX ? chosen.faceX(col) : cx
+  const z = chosen.faceZ ? chosen.faceZ(row) : cz
+
+  return {
+    x,
+    z,
+    rotationY: chosen.rot,
+    chosenWall: chosen.dir,
+    wallFaceX: chosen.faceX ? chosen.faceX(col) : undefined,
+    wallFaceZ: chosen.faceZ ? chosen.faceZ(row) : undefined,
+    doorCenterX: cx,
+    doorCenterZ: cz,
+  }
+}
+
+/**
+ * Calcula as posições dos dois cressets que flanqueiam uma porta na mesma parede.
+ * Retorna array com 0, 1 ou 2 posições dependendo do espaço disponível na parede.
+ * Para portas flutuantes (sem parede adjacente), coloca cressets nas laterais
+ * perpendiculares ao sentido da porta (padrão: virada para sul → cressets a E/W).
+ */
+export function computeDoorCressets(
+  grid: string[],
+  row: number,
+  col: number,
+  doorPlacement: ReturnType<typeof computeDoorPlacement>
+): Array<{ x: number; z: number; mounted: boolean }> {
+  const rows = grid.length
+  const cols = grid[0].length
+  const wallDir = doorPlacement.chosenWall
+  const results: Array<{ x: number; z: number; mounted: boolean }> = []
+
+  // Distância do centro da porta até o centro do cresset (metros)
+  // Porta tem 2.4m de largura; 2.5m do centro = ~1.3m da borda da porta
+  const CRESSET_DOOR_OFFSET = 2.5
+
+  // Verifica continuidade da parede nas células adjacentes ao longo da parede
+  function hasWallAt(r: number, c: number): boolean {
+    return r >= 0 && r < rows && c >= 0 && c < cols && grid[r][c] === '#'
+  }
+
+  // Porta flutuante (sem parede adjacente): coloca cressets nas laterais
+  // perpendiculares ao sentido da porta (rotationY). Padrão: virada para sul (0)
+  // → cressets a leste (+X) e oeste (-X) do centro da porta.
+  if (wallDir === 'none') {
+    const rot = doorPlacement.rotationY
+    const cx = doorPlacement.doorCenterX
+    const cz = doorPlacement.doorCenterZ
+
+    // Para rotação 0 (sul), laterais são ±X; para PI/2 (leste), laterais são ±Z; etc.
+    const dx = Math.cos(rot + Math.PI / 2) * CRESSET_DOOR_OFFSET
+    const dz = Math.sin(rot + Math.PI / 2) * CRESSET_DOOR_OFFSET
+
+    results.push(
+      { x: cx + dx, z: cz + dz, mounted: false },
+      { x: cx - dx, z: cz - dz, mounted: false },
+    )
+    return results
+  }
+
+  // Porta embutida em parede: cressets ao longo da parede
+  if (wallDir === 'above' || wallDir === 'below') {
+    // Parede horizontal (norte-sul): cressets à esquerda e direita do centro da porta
+    const wallZ = doorPlacement.wallFaceZ!
+    const doorCenterX = doorPlacement.doorCenterX
+
+    // Lado esquerdo (menor X): verifica célula à esquerda
+    const leftCol = col - 1
+    const checkRow = wallDir === 'above' ? row - 1 : row + 1
+    if (hasWallAt(checkRow, leftCol) || hasWallAt(checkRow, col)) {
+      results.push({
+        x: doorCenterX - CRESSET_DOOR_OFFSET,
+        z: wallZ,
+        mounted: true,
+      })
+    }
+
+    // Lado direito (maior X): verifica célula à direita
+    const rightCol = col + 1
+    if (hasWallAt(checkRow, rightCol) || hasWallAt(checkRow, col)) {
+      results.push({
+        x: doorCenterX + CRESSET_DOOR_OFFSET,
+        z: wallZ,
+        mounted: true,
+      })
+    }
+  } else if (wallDir === 'left' || wallDir === 'right') {
+    // Parede vertical (leste-oeste): cressets acima e abaixo do centro da porta
+    const wallX = doorPlacement.wallFaceX!
+    const doorCenterZ = doorPlacement.doorCenterZ
+
+    // Lado "acima" (menor Z): verifica célula acima
+    const upRow = row - 1
+    const checkCol = wallDir === 'left' ? col - 1 : col + 1
+    if (hasWallAt(upRow, checkCol) || hasWallAt(row, checkCol)) {
+      results.push({
+        x: wallX,
+        z: doorCenterZ - CRESSET_DOOR_OFFSET,
+        mounted: true,
+      })
+    }
+
+    // Lado "abaixo" (maior Z): verifica célula abaixo
+    const downRow = row + 1
+    if (hasWallAt(downRow, checkCol) || hasWallAt(row, checkCol)) {
+      results.push({
+        x: wallX,
+        z: doorCenterZ + CRESSET_DOOR_OFFSET,
+        mounted: true,
+      })
+    }
+  }
+
+  return results
+}
+
+/** Converte um id de nível técnico ("level-4b-secret") em texto legível para
+ *  exibição quando a porta não tem label configurado. */
+export function humanizeLevelId(levelId: string): string {
+  return levelId
+    .replace(/^level-/, '')
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase())
+}
 
 /** Ajusta as UVs de uma caixa para que a textura tila a cada `tileSize` metros,
  *  evitando esticamento em paredes de comprimentos variados. */
@@ -90,13 +285,18 @@ export interface LeverDefinition {
   label?: string
 }
 
-/** Variações de atmosfera por nível (névoa/luz) — suaves, sobre o base. */
+/** Variações de atmosfera por nível (névoa/luz) — suaves, sobre o base.
+ *  IMPORTANTE: a calibração da tocha (cresset) é ÚNICA e central em
+ *  LIGHTING_CONFIG — não deve ser sobrescrita aqui por tema/nível. */
 export interface LevelAtmosphere {
   fogColor?: number
   fogNear?: number
   fogFar?: number
   ambientColor?: number
   ambientIntensity?: number
+  hemisphereSky?: number
+  hemisphereGround?: number
+  hemisphereIntensity?: number
 }
 
 export interface ParsedDoor {
@@ -108,6 +308,8 @@ export interface ParsedDoor {
   secret: boolean
   requires: string
   bossLocked: boolean
+  /** Rotação em Y (rad) do plano da porta para encarar o ambiente aberto. */
+  rotationY: number
 }
 
 export interface ParsedLever {
@@ -141,12 +343,16 @@ export interface CressetSpawn {
   z: number
   /** true = montado na parede, false = em pé no chão. */
   mounted: boolean
-  /** Cor e intensidade da PointLight embutida (cresset = única fonte de tocha). */
+  /** Cor e intensidade da PointLight embutida (cresset = única fonte de tocha).
+   *  Valores centrais (LIGHTING_CONFIG) — calibração oficial, sem overrides. */
   color: number
   intensity: number
   distance: number
-  /** Altura da luz = posição da chama (a partícula de fogo nasce a 1.78 m). */
+  decay: number
+  /** Altura da chama VISUAL (a partícula de fogo nasce a 1.78 m). */
   flameHeight: number
+  /** Altura da ORIGEM da luz (acima da chama, subindo ao teto). */
+  lightHeight: number
 }
 
 export interface ParsedLevel {
@@ -252,6 +458,8 @@ export class LevelLoader {
             else if (wallRight && !wallLeft) fx = x + TILE_SIZE - CRESSET_WALL_OFFSET
             if (wallAbove && !wallBelow) fz = z + CRESSET_WALL_OFFSET
             else if (wallBelow && !wallAbove) fz = z + TILE_SIZE - CRESSET_WALL_OFFSET
+            // Calibração oficial da tocha — sempre os valores centrais de
+            // LIGHTING_CONFIG, nunca sobrescrita por tema/nível.
             cressets.push({
               x: fx,
               z: fz,
@@ -261,7 +469,9 @@ export class LevelLoader {
               color: LIGHTING_CONFIG.torchColor,
               intensity: LIGHTING_CONFIG.torchIntensity,
               distance: LIGHTING_CONFIG.torchDistance,
+              decay: LIGHTING_CONFIG.torchDecay,
               flameHeight: LIGHTING_CONFIG.torchFlameHeight,
+              lightHeight: LIGHTING_CONFIG.torchLightHeight,
             })
             break
           }
@@ -269,16 +479,34 @@ export class LevelLoader {
             // Marcador D1, D2... em ordem de varredura (linha, depois coluna).
             const marker = `D${doors.length + 1}`
             const config = (definition.doors ?? []).find(door => door.marker === marker)
+            const doorPlacement = computeDoorPlacement(definition.grid, row, col)
             doors.push({
               marker,
-              x: x + TILE_SIZE / 2,
-              z: z + TILE_SIZE / 2,
+              x: doorPlacement.x,
+              z: doorPlacement.z,
               targetLevelId: config?.targetLevelId ?? '',
-              label: config?.label || config?.targetLevelId || '',
+              label: config?.label || humanizeLevelId(config?.targetLevelId ?? ''),
               secret: config?.secret ?? false,
               requires: config?.requires ?? '',
               bossLocked: config?.bossLocked ?? false,
+              rotationY: doorPlacement.rotationY,
             })
+
+            // Adiciona dois cressets flanqueando a porta na mesma parede
+            const doorCressets = computeDoorCressets(definition.grid, row, col, doorPlacement)
+            for (const cr of doorCressets) {
+              cressets.push({
+                x: cr.x,
+                z: cr.z,
+                mounted: cr.mounted,
+                color: LIGHTING_CONFIG.torchColor,
+                intensity: LIGHTING_CONFIG.torchIntensity,
+                distance: LIGHTING_CONFIG.torchDistance,
+                decay: LIGHTING_CONFIG.torchDecay,
+                flameHeight: LIGHTING_CONFIG.torchFlameHeight,
+                lightHeight: LIGHTING_CONFIG.torchLightHeight,
+              })
+            }
             break
           }
           case CHAR_LEVER: {

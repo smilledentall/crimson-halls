@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LevelLoader, TILE_SIZE } from './LevelLoader'
+import { LevelLoader, TILE_SIZE, computeDoorPlacement } from './LevelLoader'
 import { ALL_LEVELS } from './levels'
 import { LIGHTING_CONFIG } from '../core/lighting.config'
 
@@ -27,7 +27,9 @@ describe('LevelLoader', () => {
     expect(parsed.cressets[0].color).toBe(LIGHTING_CONFIG.torchColor)
     expect(parsed.cressets[0].intensity).toBe(LIGHTING_CONFIG.torchIntensity)
     expect(parsed.cressets[0].distance).toBe(LIGHTING_CONFIG.torchDistance)
+    expect(parsed.cressets[0].decay).toBe(LIGHTING_CONFIG.torchDecay)
     expect(parsed.cressets[0].flameHeight).toBe(LIGHTING_CONFIG.torchFlameHeight)
+    expect(parsed.cressets[0].lightHeight).toBe(LIGHTING_CONFIG.torchLightHeight)
   })
 
   it('repassa ondas e pontos de spawn de onda', () => {
@@ -134,37 +136,219 @@ describe('LevelLoader', () => {
     }
   })
 
-  it('todo cresset (X) do grid gera exatamente uma luz embutida na mesma posição', () => {
+  it('todo cresset (X) do grid gera exatamente uma luz embutida na mesma posição; portas ganham cressets flanqueadores', () => {
     for (const level of ALL_LEVELS) {
       const parsed = loader.parse(level)
+      // Conta X no grid (cressets manuais)
       const gridX: Array<[number, number]> = []
       for (let r = 0; r < level.grid.length; r++) {
         for (let c = 0; c < level.grid[r].length; c++) {
           if (level.grid[r][c] === 'X') gridX.push([c, r])
         }
       }
-      expect(parsed.cressets.length, `nível ${level.id}: 1 X = 1 cresset`).toBe(
-        gridX.length,
-      )
+      // Conta portas no grid
+      const gridDoors: Array<[number, number]> = []
+      for (let r = 0; r < level.grid.length; r++) {
+        for (let c = 0; c < level.grid[r].length; c++) {
+          if (level.grid[r][c] === 'D') gridDoors.push([c, r])
+        }
+      }
+      // Total de cressets deve ser >= X manuais (pois portas adicionam flanqueadores)
+      expect(parsed.cressets.length).toBeGreaterThanOrEqual(gridX.length)
+      // Validação detalhada: cada cresset de X está na célula X; cressets de porta estão perto de portas
       for (const cresset of parsed.cressets) {
-        // Cresset dentro da célula X correspondente (pode ser deslocado para
-        // perto da parede adjacente, não precisa estar no centro exato).
-        expect(
-          gridX.some(
-            ([c, r]) =>
-              cresset.x >= c * TILE_SIZE &&
-              cresset.x <= c * TILE_SIZE + TILE_SIZE &&
-              cresset.z >= r * TILE_SIZE &&
-              cresset.z <= r * TILE_SIZE + TILE_SIZE,
-          ),
-          `nível ${level.id}: cresset em (${cresset.x},${cresset.z}) tem célula X`,
-        ).toBe(true)
-        // Luz embutida calibrada.
+        const inXCell = gridX.some(
+          ([c, r]) =>
+            cresset.x >= c * TILE_SIZE &&
+            cresset.x <= c * TILE_SIZE + TILE_SIZE &&
+            cresset.z >= r * TILE_SIZE &&
+            cresset.z <= r * TILE_SIZE + TILE_SIZE,
+        )
+        const nearDoor = gridDoors.some(
+          ([c, r]) => {
+            const doorCx = c * TILE_SIZE + TILE_SIZE / 2
+            const doorCz = r * TILE_SIZE + TILE_SIZE / 2
+            const dist = Math.hypot(cresset.x - doorCx, cresset.z - doorCz)
+            return dist < 4 // cresset flanqueador a ~2.5m do centro da porta
+          }
+        )
+        expect(inXCell || nearDoor, `nível ${level.id}: cresset em (${cresset.x},${cresset.z}) deve estar em X ou perto de porta`).toBe(true)
+        // Calibração oficial da tocha: ÚNICA e central (sem override por nível).
         expect(cresset.color).toBe(LIGHTING_CONFIG.torchColor)
         expect(cresset.intensity).toBe(LIGHTING_CONFIG.torchIntensity)
         expect(cresset.distance).toBe(LIGHTING_CONFIG.torchDistance)
+        expect(cresset.decay).toBe(LIGHTING_CONFIG.torchDecay)
         expect(cresset.flameHeight).toBe(LIGHTING_CONFIG.torchFlameHeight)
+        expect(cresset.lightHeight).toBe(LIGHTING_CONFIG.torchLightHeight)
       }
     }
+  })
+})
+
+describe('computeDoorPlacement — regra sistemática de posicionamento de porta', () => {
+  const T = 6 // TILE_SIZE
+  const off = 0.05 // DOOR_WALL_OFFSET
+
+  /** Helper: cria grid vazio com paredes nas posições dadas. */
+  function makeGrid(rows: number, cols: number, walls: Array<[number, number]>): string[] {
+    const grid = Array.from({ length: rows }, () => Array(cols).fill('.'))
+    for (const [r, c] of walls) grid[r][c] = '#'
+    return grid.map(row => row.join(''))
+  }
+
+  it('parede única de um lado (acima) → porta encosta na face sul, olha para sul', () => {
+    // Grid 3x3: parede acima do centro
+    const grid = makeGrid(3, 3, [[0, 1]])
+    // Porta em (1,1), parede em (0,1) = acima
+    const res = computeDoorPlacement(grid, 1, 1)
+    expect(res.chosenWall).toBe('above')
+    expect(res.x).toBeCloseTo(1 * T + T/2) // centro em X
+    expect(res.z).toBeCloseTo(1 * T + off) // rente à face sul da parede acima
+    expect(res.rotationY).toBeCloseTo(0) // olha para sul (+Z)
+  })
+
+  it('parede única de um lado (abaixo) → porta encosta na face norte, olha para norte', () => {
+    const grid = makeGrid(3, 3, [[2, 1]])
+    const res = computeDoorPlacement(grid, 1, 1)
+    expect(res.chosenWall).toBe('below')
+    expect(res.x).toBeCloseTo(1 * T + T/2)
+    expect(res.z).toBeCloseTo(1 * T + T - off)
+    expect(res.rotationY).toBeCloseTo(Math.PI) // olha para norte (-Z)
+  })
+
+  it('parede única de um lado (esquerda) → porta encosta na face leste, olha para leste', () => {
+    const grid = makeGrid(3, 3, [[1, 0]])
+    const res = computeDoorPlacement(grid, 1, 1)
+    expect(res.chosenWall).toBe('left')
+    expect(res.x).toBeCloseTo(1 * T + off)
+    expect(res.z).toBeCloseTo(1 * T + T/2)
+    expect(res.rotationY).toBeCloseTo(Math.PI/2) // olha para leste (+X)
+  })
+
+  it('parede única de um lado (direita) → porta encosta na face oeste, olha para oeste', () => {
+    const grid = makeGrid(3, 3, [[1, 2]])
+    const res = computeDoorPlacement(grid, 1, 1)
+    expect(res.chosenWall).toBe('right')
+    expect(res.x).toBeCloseTo(1 * T + T - off)
+    expect(res.z).toBeCloseTo(1 * T + T/2)
+    expect(res.rotationY).toBeCloseTo(-Math.PI/2) // olha para oeste (-X)
+  })
+
+  it('canto: duas paredes perpendiculares (acima + direita), lado aberto na direita → escolhe direita', () => {
+    // Parede acima (0,1) e à direita (1,2)
+    // Lado oposto à direita (1,2) é (1,3) = fora do grid = não '#', logo aberto
+    // Lado oposto acima (0,1) é (-1,1) = fora do grid = não '#', logo aberto
+    // Ambos têm lado aberto → prioridade S→N→E→O escolhe 'above' (prioridade 1)
+    // Mas na prática, grid 3x3: acima é borda, direita é borda. Vamos testar com espaço interno.
+    const grid = [
+      '###', // row 0
+      '#D#', // row 1: porta em (1,1), parede em (0,1)=acima, (1,2)=direita
+      '...', // row 2: espaço aberto abaixo
+    ]
+    // Porta em (1,1): above=#, right=#, below=., left=#
+    // Lado oposto 'above' = (-1,1) = OOB → não '#' = aberto
+    // Lado oposto 'right' = (1,2) = '#' = FECHADO
+    // Então só 'above' tem lado aberto → escolhe above
+    const res = computeDoorPlacement(grid, 1, 1)
+    expect(res.chosenWall).toBe('above')
+    expect(res.rotationY).toBeCloseTo(0)
+  })
+
+  it('canto real: level-4b-secret D1 em (1,12) — acima=#, direita=#, ambos fechados → prioridade escolhe above', () => {
+    // Grid do level-4b-secret (linhas 0-7, colunas 0-13)
+    const grid = [
+      '##############', // 0
+      '#P...H....E.D#', // 1: D em col 12, above=# (row 0), right=# (col 13), below=., left=.
+      '#XK..........#', // 2
+      '#....S.......#', // 3
+      '#........A..X#', // 4
+      '#..A....C....#', // 5
+      '#X..N.......T#', // 6
+      '##############', // 7
+    ]
+    const res = computeDoorPlacement(grid, 1, 12)
+    // above=#, right=#, below='.' (sem parede), left='.' (sem parede)
+    // Candidatas com parede: above, right
+    // Lado oposto 'above' = row 0 col 12 = '#' → FECHADO
+    // Lado oposto 'right' = row 1 col 13 = '#' → FECHADO
+    // Nenhuma tem lado aberto → fallback prioridade S→N→E→O entre as que têm parede:
+    // above (prio 1) vs right (prio 2) → escolhe 'above'
+    expect(res.chosenWall).toBe('above')
+    expect(res.rotationY).toBeCloseTo(0) // olha para sul
+    // Posição: face sul da parede acima (row 1 * TILE_SIZE + off)
+    expect(res.x).toBeCloseTo(12 * T + T/2)
+    expect(res.z).toBeCloseTo(1 * T + off)
+  })
+
+  it('canto real: level-1b-secret D1 em (1,10) — acima=#, direita=#, ambos fechados → prioridade escolhe above', () => {
+    const grid = [
+      '############', // 0
+      '#P........D#', // 1: D em col 10, above=#, right=#, below=., left=.
+      '#XH........#', // 2
+      '#....K..N.A#', // 3
+      '#..E...C..H#', // 4
+      '#X.........#', // 5
+      '#....E....X#', // 6
+      '############', // 7
+    ]
+    const res = computeDoorPlacement(grid, 1, 10)
+    // above=#, right=#, below='.' (sem parede), left='.' (sem parede)
+    // Lado oposto above = row 0 = '#', right = col 11 = '#'
+    // Nenhuma aberta → prioridade entre above (1) e right (2) → above
+    expect(res.chosenWall).toBe('above')
+    expect(res.rotationY).toBeCloseTo(0)
+    expect(res.x).toBeCloseTo(10 * T + T/2)
+    expect(res.z).toBeCloseTo(1 * T + off)
+  })
+
+  it('corredor estreito N-S: duas paredes opostas (esquerda + direita), prioridade E→O escolhe right', () => {
+    const grid = [
+      '#.#', // row 0
+      '#D#', // row 1: porta em (1,1), left=#, right=#
+      '#.#', // row 2
+    ]
+    const res = computeDoorPlacement(grid, 1, 1)
+    // above=., below=., left=#, right=#
+    // Lados opostos: left = col 0 = '#', right = col 2 = '#'
+    // Ambos FECHADOS (paredes do corredor) → fallback prioridade entre left (3) e right (2) → right
+    expect(res.chosenWall).toBe('right')
+    expect(res.rotationY).toBeCloseTo(-Math.PI/2)
+  })
+
+  it('sem parede adjacente → porta centralizada olhando para sul (caso flutuante)', () => {
+    const grid = makeGrid(3, 3, [])
+    const res = computeDoorPlacement(grid, 1, 1)
+    expect(res.chosenWall).toBe('none')
+    expect(res.x).toBeCloseTo(1 * T + T/2)
+    expect(res.z).toBeCloseTo(1 * T + T/2)
+    expect(res.rotationY).toBeCloseTo(0)
+  })
+
+  it('level-5 D1 em (1,6) — corredor vertical (acima=#, abaixo=#), prioridade escolhe below', () => {
+    const grid = [
+      '##############################', // 0
+      '#P....D....X.........X.......#', // 1: D em col 6, above=#, below=#
+      '#.....###........###.........#', // 2
+      '#............................#', // 3
+      '#........#...................#', // 4
+      '#............B......#........#', // 5
+      '#.......###........###......H#', // 6
+      '#..A.....................V...#', // 7
+      '#................###.........#', // 8
+      '#...........D..X.............#', // 9
+      '#..............#.............#', // 10
+      '#X...........................#', // 11
+      '#..H......D............#.....#', // 12
+      '#.........................X..#', // 13
+      '##############################', // 14
+    ]
+    const res = computeDoorPlacement(grid, 1, 6)
+    // above=#, below=#, left=., right=.
+    // Lado oposto above = row 0 col 6 = '#', below = row 2 col 6 = '#'
+    // Ambos FECHADOS → cai no fallback de prioridade: below (prio 0)
+    expect(res.chosenWall).toBe('below')
+    expect(res.rotationY).toBeCloseTo(Math.PI)
+    expect(res.x).toBeCloseTo(6 * T + T/2)
+    expect(res.z).toBeCloseTo(1 * T + T - off)
   })
 })

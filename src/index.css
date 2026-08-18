@@ -258,6 +258,40 @@ body {
   text-transform: uppercase;
 }
 
+.flashlight-indicator {
+  position: absolute;
+  top: 44px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  font-size: calc(12px * var(--hud-scale));
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.flashlight-indicator.on {
+  color: #e8d8a0;
+  border-color: rgba(232, 216, 160, 0.35);
+  background: rgba(40, 30, 10, 0.45);
+}
+
+.flashlight-indicator.off {
+  color: #5c3a3f;
+  border-color: rgba(92, 58, 63, 0.35);
+  background: rgba(10, 4, 5, 0.45);
+}
+
+.flashlight-icon {
+  font-size: calc(14px * var(--hud-scale));
+}
+
+.flashlight-key {
+  opacity: 0.7;
+}
+
 /* ---------- Menus ---------- */
 
 .menu {
@@ -783,12 +817,24 @@ body {
   font-size: 11px;
 }
 
+.touch-flashlight {
+  width: 64px;
+  height: 64px;
+  right: 28px;
+  bottom: 32px;
+  font-size: 11px;
+}
+
 /* ---------- HUD em telas pequenas ---------- */
 
 @media (max-width: 720px) {
   .hud-level,
   .hud-fps,
   .hud-kills {
+    display: none;
+  }
+
+  .flashlight-indicator {
     display: none;
   }
 
@@ -1158,6 +1204,110 @@ body {
 .epilogue .narrative-lines p {
   font-style: normal;
   color: #e8c9cd;
+}
+
+/* ---------- Créditos (vitória da campanha) ---------- */
+
+.credits-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  background: rgba(2, 1, 2, 0.98);
+  pointer-events: auto;
+  animation: screenFade 0.5s ease both;
+}
+
+.credits-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+  padding: 20px;
+  text-align: center;
+  animation: creditsScroll 45s linear both;
+  will-change: transform;
+}
+
+@keyframes creditsScroll {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(calc(-100vh - 100%));
+  }
+}
+
+.credits-title {
+  font-size: 48px;
+  letter-spacing: 10px;
+  color: #b32635;
+  text-shadow: 0 0 24px rgba(179, 38, 53, 0.55);
+}
+
+.credits-subtitle {
+  font-size: 16px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #9a6d74;
+}
+
+.credits-epilogue {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 620px;
+  margin-top: 14px;
+}
+
+.credits-epilogue p {
+  font-size: 16px;
+  line-height: 1.6;
+  color: #e8c9cd;
+}
+
+.credits-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.credits-heading {
+  font-size: 20px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: #c98f96;
+  border-bottom: 1px solid #6b2a33;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+}
+
+.credits-entry {
+  font-size: 15px;
+  color: #c8a9b0;
+}
+
+.credits-thanks {
+  margin-top: 22px;
+  font-size: 18px;
+  font-style: italic;
+  color: #e8c9cd;
+  text-shadow: 0 0 12px rgba(179, 38, 53, 0.4);
+}
+
+.credits-skip {
+  position: absolute;
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  opacity: 0.9;
 }
 
 .note-modal {

@@ -7,6 +7,14 @@ import type { LevelDefinition } from '../LevelLoader'
 export const level3bPath: LevelDefinition = {
   id: 'level-3b-path',
   name: 'Caminho das Gárgulas',
+  atmosphere: {
+    fogColor: 0x1c1c26,
+    ambientColor: 0xa8a8c8,
+    ambientIntensity: 0.28,
+    hemisphereSky: 0x8a8aae,
+    hemisphereGround: 0x241a20,
+    hemisphereIntensity: 0.2,
+  },
   grid: [
     '##############',
     '#P..A..X....D#',

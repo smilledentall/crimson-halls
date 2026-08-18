@@ -7,15 +7,14 @@ import type { LevelDefinition } from '../LevelLoader'
 export const level4bSecret: LevelDefinition = {
   id: 'level-4b-secret',
   name: 'Arsenal Esquecido',
-  grid: [
+grid: [
     '##############',
     '#P...H....E.D#',
-    '#.K..........#',
+    '#XK..........#',
     '#....S.......#',
-    '#........A...#',
+    '#........A..X#',
     '#..A....C....#',
-    '#...N.......T#',
-    '#............#',
+    '#X..N.......T#',
     '##############',
   ],
   doors: [{ marker: 'D1', targetLevelId: 'level-4', label: 'Salões dos Condenados' }],

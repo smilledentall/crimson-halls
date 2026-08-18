@@ -29,7 +29,29 @@ export type SfxName =
   | 'door'
   | 'sector_clear'
   | 'lever'
+  | 'flashlight_click'
   | 'boss_roar'
+  | 'fireplace'
+  // Enemy-specific sounds (mapped to actual .wav files in assets/sounds/)
+  | 'chaser_death'
+  | 'chaser_damage'
+  | 'ranged_death'
+  | 'ranged_damage'
+  | 'kamikaze_death'
+  | 'kamikaze_damage'
+  | 'tank_death'
+  | 'tank_damage'
+  | 'boss_death'
+  | 'boss_damage'
+  | 'flying_death'
+  | 'flying_damage'
+  | 'swarm_death'
+  | 'swarm_damage'
+  | 'shielded_death'
+  | 'shielded_damage'
+  | 'kamikaze_death'
+  | 'tank_death'
+  | 'boss_death'
 
 const SFX_NAMES: SfxName[] = [
   'pistol',
@@ -48,13 +70,36 @@ const SFX_NAMES: SfxName[] = [
   'door',
   'sector_clear',
   'lever',
+  'flashlight_click',
   'boss_roar',
+  // Enemy-specific sounds
+  'chaser_death',
+  'chaser_damage',
+  'ranged_death',
+  'ranged_damage',
+  'kamikaze_death',
+  'kamikaze_damage',
+  'tank_death',
+  'tank_damage',
+  'boss_death',
+  'boss_damage',
+  'flying_death',
+  'flying_damage',
+  'swarm_death',
+  'swarm_damage',
+  'shielded_death',
+  'shielded_damage',
+  'kamikaze_death',
+  'tank_death',
+  'boss_death',
+  'fireplace',
 ]
 
 const MUSIC_BASE_GAIN = 0.11
 
 // Arquivos reais (opcionais): carregados do diretório de assets no build.
 const soundUrls = import.meta.glob('../assets/sounds/*.wav', { query: '?url', import: 'default' })
+const musicUrls = import.meta.glob('../assets/sounds/*.ogg', { query: '?url', import: 'default' })
 
 export class AudioManager {
   private ctx: AudioContext | null = null
@@ -63,11 +108,22 @@ export class AudioManager {
   private musicMasterGain: GainNode | null = null
   private musicExploreGain: GainNode | null = null
   private musicCombatGain: GainNode | null = null
+  private musicAmbientGain: GainNode | null = null
   private musicNodes: OscillatorNode[] = []
   private noiseBuffer: AudioBuffer | null = null
   private loadedBuffers = new Map<SfxName, AudioBuffer>()
   private preloadStarted = false
   private musicStarted = false
+  private ambientBuffer: AudioBuffer | null = null
+  private ambientSource: AudioBufferSourceNode | null = null
+
+  /** Loops posicionais aguardando o buffer (ex.: fogueiras/cressets). */
+  private pendingLoops: Array<{
+    name: SfxName
+    panner: PannerNode
+    gain: GainNode
+    handle: { source: AudioBufferSourceNode | null; stopped: boolean }
+  }> = []
 
   private masterVolume = 0.6
   private sfxVolume = 1
@@ -142,6 +198,65 @@ export class AudioManager {
     this.sfx[name]?.(panner)
   }
 
+  /**
+   * Inicia um som posicional em LOOP (ex.: fogueira dos cressets). Retorna um
+   * handle com `stop()` e `setVolume()`. A atenuação de distância NÃO fica no
+   * panner (que só faz panorâmica estéreo): quem regula o volume é o GainNode
+   * via `setVolume`, chamado a cada frame com a distância jogador→fonte. Se o
+   * .wav ainda não terminou de carregar, o loop entra em fila e toca assim que
+   * o buffer chega.
+   */
+  startLoopingPositional(
+    name: SfxName,
+    position: THREE.Vector3,
+  ): { stop: () => void; setVolume: (v: number) => void } | null {
+    if (!this.ctx || !this.sfxGain) return null
+    const panner = this.ctx.createPanner()
+    panner.panningModel = 'equalpower'
+    // Amplitude constante no panner (rolloff 0): a distância é tratada pelo
+    // GainNode manual, senão teríamos atenuação dupla.
+    panner.distanceModel = 'inverse'
+    panner.refDistance = 1
+    panner.maxDistance = 100000
+    panner.rolloffFactor = 0
+    panner.positionX.value = position.x
+    panner.positionY.value = position.y
+    panner.positionZ.value = position.z
+    panner.connect(this.sfxGain)
+
+    const gain = this.ctx.createGain()
+    gain.gain.value = 0
+    gain.connect(panner)
+
+    const handle: { source: AudioBufferSourceNode | null; stopped: boolean } = {
+      source: null,
+      stopped: false,
+    }
+
+    const buffer = this.loadedBuffers.get(name)
+    if (buffer) {
+      handle.source = this.startLoop(buffer, gain)
+    } else {
+      this.pendingLoops.push({ name, panner, gain, handle })
+    }
+
+    return {
+      stop: () => {
+        if (handle.stopped) return
+        handle.stopped = true
+        handle.source?.stop()
+        handle.source?.disconnect()
+        gain.disconnect()
+        panner.disconnect()
+        this.pendingLoops = this.pendingLoops.filter(entry => entry.panner !== panner)
+      },
+      setVolume: (v: number) => {
+        if (handle.stopped || !this.ctx) return
+        gain.gain.setTargetAtTime(Math.max(0, Math.min(1, v)), this.ctx.currentTime, 0.12)
+      },
+    }
+  }
+
   /** Música ambiente em duas camadas (exploração/combate) com crossfade. */
   startMusic(): void {
     if (!this.ctx || !this.masterGain || this.musicStarted) return
@@ -159,15 +274,9 @@ export class AudioManager {
     this.musicCombatGain.gain.value = 0
     this.musicCombatGain.connect(this.musicMasterGain)
 
-    // Camada de exploração: drone grave e calmo.
-    for (const frequency of [55, 55.7, 110.3]) {
-      const osc = this.ctx.createOscillator()
-      osc.type = 'sine'
-      osc.frequency.value = frequency
-      osc.connect(this.musicExploreGain)
-      osc.start()
-      this.musicNodes.push(osc)
-    }
+    // Carrega cave.ogg como camada de exploração (substitui os osciladores procedurais)
+    this.loadExplorationMusic()
+
     // Camada de combate: tons dissonantes, mais presentes.
     for (const frequency of [110, 117, 165.5]) {
       const osc = this.ctx.createOscillator()
@@ -187,6 +296,42 @@ export class AudioManager {
     this.musicNodes.push(lfo)
   }
 
+  /** Carrega cave.ogg como camada de exploração (substitui osciladores procedurais). */
+  private async loadExplorationMusic(): Promise<void> {
+    if (!this.ctx) return
+    const loader = musicUrls['../assets/sounds/cave.ogg']
+    if (!loader) {
+      console.warn('[AudioManager] cave.ogg não encontrado em assets/sounds/')
+      return
+    }
+    try {
+      const url = await loader()
+      const response = await fetch(url)
+      if (!response.ok) throw new Error('Failed to load cave.ogg')
+      const arrayBuffer = await response.arrayBuffer()
+      this.ambientBuffer = await this.ctx!.decodeAudioData(arrayBuffer)
+      this.playExplorationLoop()
+    } catch (e) {
+      console.warn('[AudioManager] Falha ao carregar cave.ogg:', e)
+    }
+  }
+
+  private playExplorationLoop(): void {
+    if (!this.ctx || !this.ambientBuffer || this.ambientSource) return
+    // Cadeia real: ambientSource → musicAmbientGain → musicExploreGain → musicMasterGain → masterGain.
+    // O musicAmbientGain é o controle de volume do cave.ogg; sem ele o nó ficava órfão
+    // (o source ia direto ao musicExploreGain) e o ganho não tinha efeito nenhum.
+    this.musicAmbientGain = this.ctx.createGain()
+    this.musicAmbientGain.gain.value = 6.0 // Volume da música de exploração (compensa o MUSIC_BASE_GAIN baixo)
+    this.musicAmbientGain.connect(this.musicExploreGain!)
+
+    this.ambientSource = this.ctx.createBufferSource()
+    this.ambientSource.buffer = this.ambientBuffer
+    this.ambientSource.loop = true
+    this.ambientSource.connect(this.musicAmbientGain!)
+    this.ambientSource.start()
+  }
+
   /** 0 = exploração pura, 1 = combate total. Crossfade suave via setTargetAtTime. */
   setCombatIntensity(intensity: number): void {
     if (!this.ctx || !this.musicExploreGain || !this.musicCombatGain) return
@@ -201,9 +346,15 @@ export class AudioManager {
     this.musicNodes = []
     this.musicExploreGain?.disconnect()
     this.musicCombatGain?.disconnect()
+    this.musicAmbientGain?.disconnect()
     this.musicMasterGain?.disconnect()
+    if (this.ambientSource) {
+      this.ambientSource.stop()
+      this.ambientSource = null
+    }
     this.musicExploreGain = null
     this.musicCombatGain = null
+    this.musicAmbientGain = null
     this.musicMasterGain = null
     this.musicStarted = false
   }
@@ -229,8 +380,30 @@ export class AudioManager {
   private async preload(): Promise<void> {
     const ctx = this.ctx
     if (!ctx) return
+
+    // Mapeamento de nomes lógicos para arquivos reais em assets/sounds/
+    const soundFileMap: Record<string, string> = {
+      'chaser_death': 'deaths',
+      'chaser_damage': 'pains',
+      'ranged_death': 'deaths',
+      'ranged_damage': 'paine',
+      'kamikaze_death': 'deathd',
+      'kamikaze_damage': 'painb',
+      'tank_death': 'deathb',
+      'tank_damage': 'painb',
+      'boss_death': 'deathe',
+      'boss_damage': 'paine',
+      'flying_death': 'deaths',
+      'flying_damage': 'painb',
+      'swarm_death': 'deaths',
+      'swarm_damage': 'pains',
+      'shielded_death': 'deathb',
+      'shielded_damage': 'paine',
+    }
+
     for (const name of SFX_NAMES) {
-      const loader = soundUrls[`../assets/sounds/${name}.wav`]
+      const fileName = soundFileMap[name] ?? name
+      const loader = soundUrls[`../assets/sounds/${fileName}.wav`]
       if (!loader) continue
       try {
         const url = await loader()
@@ -239,6 +412,7 @@ export class AudioManager {
         const arrayBuffer = await response.arrayBuffer()
         const buffer = await ctx.decodeAudioData(arrayBuffer)
         this.loadedBuffers.set(name, buffer)
+        this.flushPendingLoops()
       } catch {
         // arquivo ausente/corrompido → mantém o gerador procedural
       }
@@ -251,6 +425,30 @@ export class AudioManager {
     source.buffer = buffer
     source.connect(destination)
     source.start()
+  }
+
+  private startLoop(buffer: AudioBuffer, destination: AudioNode): AudioBufferSourceNode {
+    const source = this.ctx!.createBufferSource()
+    source.buffer = buffer
+    source.loop = true
+    source.connect(destination)
+    source.start()
+    return source
+  }
+
+  /** Dispara os loops posicionais cujo buffer já chegou (chamado após cada preload). */
+  private flushPendingLoops(): void {
+    if (this.pendingLoops.length === 0) return
+    const remaining: typeof this.pendingLoops = []
+    for (const entry of this.pendingLoops) {
+      const buffer = this.loadedBuffers.get(entry.name)
+      if (buffer && !entry.handle.stopped) {
+        entry.handle.source = this.startLoop(buffer, entry.gain)
+      } else if (!entry.handle.stopped) {
+        remaining.push(entry)
+      }
+    }
+    this.pendingLoops = remaining
   }
 
   private createNoiseBuffer(ctx: AudioContext): AudioBuffer {
@@ -360,10 +558,60 @@ export class AudioManager {
       this.playTone(400, 0.2, 0.3, 'sine', dest, 200)
       this.playTone(500, 0.15, 0.2, 'square', dest, 300)
     },
+    flashlight_click: dest => {
+      this.playTone(1200, 0.03, 0.12, 'square', dest)
+      this.playTone(800, 0.04, 0.1, 'square', dest)
+    },
     boss_roar: dest => {
       this.playNoiseBurst(0.6, 0.8, 500, dest)
       this.playTone(90, 0.6, 0.5, 'sawtooth', dest, 45)
       this.playTone(120, 0.5, 0.3, 'square', dest, 60)
     },
+    fireplace: dest => {
+      this.playNoiseBurst(0.4, 0.25, 900, dest)
+      this.playTone(70, 0.35, 0.12, 'sine', dest, 45)
+    },
+    // Enemy-specific sounds (fallback procedural - real files loaded from assets/sounds/)
+    chaser_death: dest => {
+      this.playNoiseBurst(0.25, 0.4, 1200, dest)
+      this.playTone(200, 0.3, 0.3, 'sawtooth', dest, 80)
+    },
+    chaser_damage: dest => this.playNoiseBurst(0.08, 0.5, 2200, dest),
+    ranged_death: dest => {
+      this.playNoiseBurst(0.2, 0.35, 1500, dest)
+      this.playTone(250, 0.25, 0.3, 'sawtooth', dest, 100)
+    },
+    ranged_damage: dest => this.playNoiseBurst(0.07, 0.45, 2800, dest),
+    kamikaze_death: dest => {
+      this.playNoiseBurst(0.4, 0.5, 800, dest)
+      this.playTone(150, 0.4, 0.4, 'sawtooth', dest, 50)
+    },
+    kamikaze_damage: dest => this.playNoiseBurst(0.1, 0.4, 2000, dest),
+    tank_death: dest => {
+      this.playNoiseBurst(0.5, 0.6, 600, dest)
+      this.playTone(80, 0.6, 0.5, 'sine', dest, 40)
+    },
+    tank_damage: dest => this.playNoiseBurst(0.15, 0.5, 1000, dest),
+    boss_death: dest => {
+      this.playNoiseBurst(0.8, 0.7, 400, dest)
+      this.playTone(60, 0.8, 0.6, 'sawtooth', dest, 30)
+      this.playTone(90, 0.6, 0.4, 'square', dest, 50)
+    },
+    boss_damage: dest => this.playNoiseBurst(0.2, 0.6, 800, dest),
+    flying_death: dest => {
+      this.playNoiseBurst(0.3, 0.4, 1800, dest)
+      this.playTone(300, 0.35, 0.35, 'sawtooth', dest, 120)
+    },
+    flying_damage: dest => this.playNoiseBurst(0.06, 0.5, 3000, dest),
+    swarm_death: dest => {
+      this.playNoiseBurst(0.15, 0.3, 2000, dest)
+      this.playTone(400, 0.2, 0.25, 'square', dest, 150)
+    },
+    swarm_damage: dest => this.playNoiseBurst(0.05, 0.3, 2500, dest),
+    shielded_death: dest => {
+      this.playNoiseBurst(0.4, 0.5, 900, dest)
+      this.playTone(120, 0.4, 0.4, 'sine', dest, 60)
+    },
+    shielded_damage: dest => this.playNoiseBurst(0.12, 0.45, 1500, dest),
   }
 }

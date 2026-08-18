@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { AudioManager } from './AudioManager'
+import { AudioManager, type SfxName } from './AudioManager'
 import { CollisionSystem } from './CollisionSystem'
 import { InputManager } from './InputManager'
 import { InputManagerMobile } from './InputManagerMobile'
@@ -40,7 +40,7 @@ import {
 } from '../state/progression.config'
 import { SPEED_PER_LEVEL } from '../state/progression.config'
 import { applyWeaponUpgrades } from '../weapons/weapon-upgrades'
-import { EPILOGUE, getSecretNote, LEVEL_INTROS } from '../narrative/story.config'
+import { getSecretNote, LEVEL_INTROS } from '../narrative/story.config'
 import type { LevelAtmosphere } from '../levels/LevelLoader'
 import { createWeapon } from '../weapons/Weapon'
 import type { Weapon, WeaponContext } from '../weapons/Weapon'
@@ -56,6 +56,9 @@ const DOOR_WIDTH = 2.4
 const TRANSITION_DURATION = 0.35
 const DOOR_LABEL_RANGE = 28
 const DOOR_LABEL_FADE = 16
+/** Deslocamento do label de porta na direção em que a porta encara, para o
+ *  sprite não ser cortado pela parede adjacente. */
+const DOOR_LABEL_OFFSET = 0.6
 
 /** Estado de sessão por nível: o que já foi eliminado/coletado/destravado. */
 interface LevelSessionState {
@@ -124,6 +127,7 @@ export class Engine {
   private doorMeshes: THREE.Group[] = []
   private noteMeshes: THREE.Group[] = []
   private ambientLight: THREE.AmbientLight | null = null
+  private hemisphereLight: THREE.HemisphereLight | null = null
   private doorLabels: Array<{
     material: THREE.SpriteMaterial
     texture: THREE.CanvasTexture
@@ -142,6 +146,9 @@ export class Engine {
   private bossDefeatActive = false
   private bossDefeatTimer = 0
   private bossDefeatAccum = 0
+  private flashlight: THREE.SpotLight | null = null
+  private flashlightEnabled = true
+  private flashlightKeyHeld = false
   private lastBossPct = -1
   private activeSummons = 0
   private regenTimer = 0
@@ -177,6 +184,12 @@ export class Engine {
   private bloomPass: UnrealBloomPass | null = null
   private levelLights: Array<{ light: THREE.PointLight; base: number; flicker: boolean }> = []
   private cressetFlames: Array<{ x: number; y: number; z: number; intensity: number }> = []
+  private cressetSounds: Array<{
+    x: number
+    z: number
+    stop: () => void
+    setVolume: (v: number) => void
+  }> = []
   private effectLights: Array<{ light: THREE.PointLight; life: number; maxLife: number }> = []
   private shake = 0
   private flickerTime = 0
@@ -213,12 +226,12 @@ export class Engine {
 
   /** Recentra a mira por inclinação (mobile). Sem efeito em desktop. */
   recenterTilt(): void {
-    if (this.input instanceof InputManagerMobile) this.input.recenterTilt()
+    if (this.input?.isTiltLookEnabled()) this.input.recenterTilt()
   }
 
   /** Pede permissão de sensores (iOS) e ativa a mira por inclinação. */
   enableTiltLook(): void {
-    if (this.input instanceof InputManagerMobile) void this.input.requestSensorPermission()
+    void this.input?.enableTiltLook()
   }
 
   init(container: HTMLElement): void {
@@ -265,10 +278,11 @@ export class Engine {
       LIGHTING_CONFIG.hemisphereGround,
       LIGHTING_CONFIG.hemisphereIntensity,
     )
+    this.hemisphereLight = hemisphere
     this.scene.add(hemisphere)
 
     // Lanterna acoplada à câmera: visibilidade mínima garantida em todo o mapa.
-    const flashlight = new THREE.SpotLight(
+    this.flashlight = new THREE.SpotLight(
       LIGHTING_CONFIG.flashlightColor,
       LIGHTING_CONFIG.flashlightIntensity,
       LIGHTING_CONFIG.flashlightDistance,
@@ -276,9 +290,14 @@ export class Engine {
       LIGHTING_CONFIG.flashlightPenumbra,
       2,
     )
-    this.camera.add(flashlight)
-    flashlight.target.position.set(0, 0, -1)
-    this.camera.add(flashlight.target)
+    this.camera.add(this.flashlight)
+    // O SpotLight nasce em (0,1,0) local (DEFAULT_UP); como filho da câmera,
+    // isso deslocaria a luz para cima do olho e o feixe apontaria ~45° para baixo.
+    // Definimos a posição em (0,0,0) para que o feixe aponte exatamente para a frente
+    // da câmera (centro da tela).
+    this.flashlight.position.set(0, 0, 0)
+    this.flashlight.target.position.set(0, 0, -1)
+    this.camera.add(this.flashlight.target)
 
     // Log de diagnóstico: valores de iluminação realmente aplicados.
     console.log('[engine] iluminação aplicada:', {
@@ -290,9 +309,9 @@ export class Engine {
       },
       hemisphere: { intensity: hemisphere.intensity },
       flashlight: {
-        intensity: flashlight.intensity,
-        distance: flashlight.distance,
-        angle: flashlight.angle,
+        intensity: this.flashlight.intensity,
+        distance: this.flashlight.distance,
+        angle: this.flashlight.angle,
       },
       fog: this.scene.fog ? 'ligado' : 'desligado',
     })
@@ -426,7 +445,8 @@ export class Engine {
       spendAmmo: (id, amount) => useGameStore.getState().spendAmmo(id, amount),
       onEnemyHit: (enemy, damage) => {
         enemy.damage(damage)
-        this.audio.playPositional('enemy_hit', enemy.position)
+        const hitSound = this.getEnemyHitSound(enemy.type.id)
+        this.audio.playPositional(hitSound, enemy.position)
         this.spawnEnemyHitParticles(enemy)
       },
       onImpact: (point, normal) => {
@@ -507,6 +527,7 @@ export class Engine {
       this.updatePickups(dt)
       this.handleWeaponSwitchKeys()
       this.handlePauseKey()
+      this.handleFlashlightKey()
       this.updateCombatMusic()
       this.updateDoorInteraction()
       this.updateLeverInteraction()
@@ -523,6 +544,7 @@ export class Engine {
 
     this.weaponView?.update(dt)
     this.updateCressetFlames()
+    this.updateCressetAudio()
     this.particles?.update(dt)
     this.updateEffectLights(dt)
     this.updateLevelLightFlicker(dt)
@@ -630,6 +652,23 @@ export class Engine {
     if (useGameStore.getState().phase !== 'playing') return
     for (const flame of this.cressetFlames) {
       this.particles.spawnFlame(new THREE.Vector3(flame.x, flame.y, flame.z), flame.intensity)
+    }
+  }
+
+  /**
+   * Volume do fogo dos cressets conforme a distância do jogador: máximo a até
+   * ~3 unidades e caindo a zero a ~28. Atualizado a cada frame.
+   */
+  private updateCressetAudio(): void {
+    if (this.cressetSounds.length === 0 || !this.player) return
+    const px = this.player.position.x
+    const pz = this.player.position.z
+    for (const sound of this.cressetSounds) {
+      const dx = sound.x - px
+      const dz = sound.z - pz
+      const distance = Math.sqrt(dx * dx + dz * dz)
+      const volume = distance <= 3 ? 1 : Math.max(0, 1 - (distance - 3) / 25)
+      sound.setVolume(volume)
     }
   }
 
@@ -747,7 +786,8 @@ export class Engine {
         useGameStore.getState().addKill()
         useGameStore.getState().addCurrency(enemy.type.reward)
         if (enemy.spawnId) this.session.deadEnemies.add(enemy.spawnId)
-        this.audio.playPositional('enemy_death', enemy.position)
+        const deathSound = this.getEnemyDeathSound(enemy.type.id)
+        this.audio.playPositional(deathSound, enemy.position)
         this.spawnEnemyDeathParticles(enemy)
         // Kamikaze explode ao morrer (a menos que já tenha detonado no contato).
         if (enemy.type.explodesOnDeath && !enemy.exploded) {
@@ -1220,6 +1260,27 @@ export class Engine {
     this.pauseKeyHeld = pressed
   }
 
+  /** Tecla L alterna lanterna com "edge trigger" (uma pressão = um toggle). */
+  private handleFlashlightKey(): void {
+    const pressed = this.input?.isKeyDown('KeyL') ?? false
+    if (pressed && !this.flashlightKeyHeld) {
+      this.toggleFlashlight()
+    }
+    this.flashlightKeyHeld = pressed
+  }
+
+  /** Alterna a lanterna (somente durante o jogo) e publica o estado no store. */
+  toggleFlashlight(): void {
+    const phase = useGameStore.getState().phase
+    if (phase !== 'playing') return
+    this.flashlightEnabled = !this.flashlightEnabled
+    if (this.flashlight) {
+      this.flashlight.visible = this.flashlightEnabled
+    }
+    this.audio.play('flashlight_click')
+    useGameStore.getState().setFlashlightState(this.flashlightEnabled)
+  }
+
   /** Detecta a porta mais próxima do jogador e expõe o prompt no store. */
   private updateDoorInteraction(): void {
     if (!this.player) return
@@ -1283,10 +1344,11 @@ export class Engine {
       const door = store.interactableDoor
       if (door && !door.locked && LEVELS_BY_ID[door.targetLevelId]) {
         if (door.targetLevelId === VICTORY_LEVEL_ID) {
-          // Porta de saída da campanha: encerra a missão (epílogo → vitória).
+          // Porta de saída da campanha: encerra a missão direto na tela de
+          // vitória (créditos em scroll), que já inclui o texto do epílogo.
           this.audio.play('door')
           useGameStore.getState().setVictoryAvailable(false)
-          useGameStore.getState().setEpilogue(EPILOGUE)
+          useGameStore.getState().completeLevel()
         } else {
           this.beginTransition(door.targetLevelId)
         }
@@ -1442,6 +1504,10 @@ export class Engine {
     const definition = custom ?? LEVELS_BY_ID[levelId]
     if (!definition) return
 
+    // Sincroniza a lanterna com o estado do store (novo jogo/retry = ligada).
+    this.flashlightEnabled = useGameStore.getState().flashlightEnabled
+    if (this.flashlight) this.flashlight.visible = this.flashlightEnabled
+
     // Carrega as texturas do nível (se forem de imagem)
     const textures = await getLevelTextures(levelId)
 
@@ -1540,17 +1606,18 @@ export class Engine {
       this.scene.add(pickup.mesh)
     }
 
-    // Cressets ('X'): cada um carrega a PointLight embutida na altura da chama
-    // (única fonte de tocha do jogo — nunca há luz sem objeto visual).
+    // Cressets ('X'): cada um carrega a PointLight embutida na altura da luz
+    // (acima da chama, subindo ao teto — ilumina o teto primeiro e as paredes
+    // recebem reflexo secundário). Única fonte de tocha do jogo.
     this.levelLights = []
     for (const cresset of parsed.cressets) {
       const light = new THREE.PointLight(
         cresset.color,
         cresset.intensity,
         cresset.distance,
-        2,
+        cresset.decay,
       )
-      light.position.set(cresset.x, cresset.flameHeight, cresset.z)
+      light.position.set(cresset.x, cresset.lightHeight, cresset.z)
       this.scene.add(light)
       this.levelLights.push({ light, base: cresset.intensity, flicker: true })
     }
@@ -1562,6 +1629,28 @@ export class Engine {
       z: cresset.z,
       intensity: 1,
     }))
+
+    // Som ambiente de fogueira (loop posicional) em cada cresset.
+    this.cressetSounds = parsed.cressets
+      .map(cresset => {
+        const handle = this.audio.startLoopingPositional(
+          'fireplace',
+          new THREE.Vector3(cresset.x, cresset.flameHeight, cresset.z),
+        )
+        if (!handle) return null
+        return {
+          x: cresset.x,
+          z: cresset.z,
+          stop: handle.stop,
+          setVolume: handle.setVolume,
+        }
+      })
+      .filter(
+        (
+          entry,
+        ): entry is { x: number; z: number; stop: () => void; setVolume: (v: number) => void } =>
+          entry !== null,
+      )
 
     // Portas: estrutura simples com brilho emissivo (indica interatividade).
     // Destravam por setor limpo, por válvula (`requires`) ou pela morte do chefe.
@@ -1575,6 +1664,7 @@ export class Engine {
         door.requires,
         door.bossLocked,
         door.label,
+        door.rotationY,
       )
       this.doorMeshes.push(mesh)
       this.scene.add(mesh)
@@ -1645,6 +1735,7 @@ export class Engine {
     requires: string,
     bossLocked: boolean,
     label: string,
+    rotationY: number,
   ): THREE.Group {
     const group = new THREE.Group()
     const glowColor = secret ? 0xe04aff : 0x35e0c0
@@ -1664,6 +1755,7 @@ export class Engine {
     const planeGeo = new THREE.PlaneGeometry(1, 1)
     const glow = new THREE.Mesh(planeGeo, doorMat)
     glow.position.set(x, 0, z)
+    glow.rotation.y = rotationY
     group.add(glow)
 
     // Aplica a textura da porta (chroma key, recortada na arte) assim que
@@ -1687,6 +1779,8 @@ export class Engine {
     else void getSpriteEntryAsync(url).then(applyTexture)
 
     // Label do destino (billboard), na cor da porta (teal/magenta).
+    // Empurra levemente para a direção em que a porta encara, para o sprite
+    // não invadir a parede adjacente e ser cortado por ela.
     if (label) {
       const texture = this.createDoorLabelTexture(label, secret ? '#e04aff' : '#35e0c0')
       const mat = new THREE.SpriteMaterial({
@@ -1696,7 +1790,9 @@ export class Engine {
         opacity: 0,
       })
       const sprite = new THREE.Sprite(mat)
-      sprite.position.set(x, WALL_HEIGHT + 0.9, z)
+      const faceX = Math.sin(rotationY)
+      const faceZ = Math.cos(rotationY)
+      sprite.position.set(x + faceX * DOOR_LABEL_OFFSET, WALL_HEIGHT - 0.4, z + faceZ * DOOR_LABEL_OFFSET)
       const texAspect = texture.image.width / texture.image.height
       const textScale = Math.min(6, Math.max(2.6, label.length * 0.22))
       sprite.scale.set(textScale, textScale / texAspect, 1)
@@ -1802,6 +1898,11 @@ export class Engine {
       this.ambientLight.color.setHex(atm.ambientColor ?? LIGHTING_CONFIG.ambientColor)
       this.ambientLight.intensity = atm.ambientIntensity ?? LIGHTING_CONFIG.ambientIntensity
     }
+    if (this.hemisphereLight) {
+      this.hemisphereLight.color.setHex(atm.hemisphereSky ?? LIGHTING_CONFIG.hemisphereSky)
+      this.hemisphereLight.groundColor.setHex(atm.hemisphereGround ?? LIGHTING_CONFIG.hemisphereGround)
+      this.hemisphereLight.intensity = atm.hemisphereIntensity ?? LIGHTING_CONFIG.hemisphereIntensity
+    }
   }
 
   /** Regra de destravamento de uma porta: chefe morto > válvula > setor limpo. */
@@ -1865,6 +1966,8 @@ export class Engine {
     this.levelRoot = null
     this.wallMeshes = []
     this.cressetFlames = []
+    for (const handle of this.cressetSounds) handle.stop()
+    this.cressetSounds = []
     for (const enemy of this.enemies) {
       this.scene?.remove(enemy.mesh)
       enemy.dispose()
@@ -1965,5 +2068,62 @@ export class Engine {
       entry.light.dispose()
     }
     this.effectLights = []
+  }
+
+  /**
+   * Retorna o som de dano apropriado para o tipo de inimigo.
+   * Usa sons específicos se disponíveis, senão cai no genérico.
+   */
+  private getEnemyHitSound(enemyType: string): SfxName {
+    switch (enemyType) {
+      case 'chaser':
+      case 'runner':
+      case 'swarm':
+        return 'chaser_damage'
+      case 'shooter':
+      case 'ranged':
+        return 'ranged_damage'
+      case 'kamikaze':
+        return 'kamikaze_damage'
+      case 'tank':
+        return 'tank_damage'
+      case 'boss':
+        return 'boss_damage'
+      case 'flying':
+        return 'flying_damage'
+      case 'shielded':
+        return 'shielded_damage'
+      default:
+        return 'enemy_hit'
+    }
+  }
+
+  /**
+   * Retorna o som de morte apropriado para o tipo de inimigo.
+   * Usa sons específicos se disponíveis, senão cai no genérico.
+   */
+  private getEnemyDeathSound(enemyType: string): SfxName {
+    switch (enemyType) {
+      case 'chaser':
+      case 'runner':
+        return 'chaser_death'
+      case 'shooter':
+      case 'ranged':
+        return 'ranged_death'
+      case 'kamikaze':
+        return 'kamikaze_death'
+      case 'tank':
+        return 'tank_death'
+      case 'boss':
+        return 'boss_death'
+      case 'flying':
+        return 'flying_death'
+      case 'swarm':
+        return 'swarm_death'
+      case 'shielded':
+        return 'shielded_death'
+      default:
+        return 'enemy_death'
+    }
   }
 }

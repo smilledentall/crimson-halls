@@ -29,6 +29,7 @@ export function HUD() {
   const fps = useGameStore(state => state.fps)
   const colorblindMode = useGameStore(state => state.colorblindMode)
   const hudFontSize = useGameStore(state => state.hudFontSize)
+  const flashlightEnabled = useGameStore(state => state.flashlightEnabled)
 
   const weapon = WEAPONS[currentWeaponId]
   const infiniteAmmo = weapon.ammoCapacity === 0
@@ -87,6 +88,12 @@ export function HUD() {
       <div className="hud-level">
         {campaignLabel}
         {levelName}
+      </div>
+
+      <div className={`flashlight-indicator${flashlightEnabled ? ' on' : ' off'}`}>
+        <span className="flashlight-icon">{flashlightEnabled ? '\u{1F4A1}' : '\u{1F635}'}</span>
+        Lanterna: {flashlightEnabled ? 'ON' : 'OFF'}
+        <span className="flashlight-key">[L]</span>
       </div>
 
       {levelCleared && <div className="sector-clear-banner">SETOR LIMPO</div>}
