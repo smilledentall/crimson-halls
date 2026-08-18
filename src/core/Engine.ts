@@ -19,6 +19,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import type { Enemy } from '../entities/Enemy'
 import type { CombatModifiers, EnemyWorld } from '../entities/Enemy'
 import { createEnemy, ENEMY_SPRITE_URLS, ENEMY_TYPES } from '../entities/EnemyTypes'
+import type { EnemyTypeDefinition } from '../entities/EnemyTypes'
 import { Pickup } from '../entities/Pickup'
 import { PICKUP_CONFIG } from '../entities/pickup.config'
 import { Player } from '../entities/Player'
@@ -35,6 +36,7 @@ import { DIFFICULTIES } from '../state/difficulty.config'
 import {
   CURRENCY_PER_LEVEL_CLEAR,
   ENEMY_SPAWN_MULTIPLIER,
+  RANDOM_ENEMY_VARIANT_CHANCE,
   REGEN_INTERVAL_SECONDS,
   SKILL_POINT_PER_LEVEL_CLEAR,
 } from '../state/progression.config'
@@ -1624,32 +1626,43 @@ export class Engine {
     useGameStore.getState().setVictoryAvailable(false)
 
     // Spawn de inimigos: ignora spawns já eliminados nesta sessão.
+    // Cada marcador gera um único inimigo (sem duplicação); o tipo pode variar
+    // aleatoriamente dentro do roster da fase (tipos presentes nos marcadores,
+    // chefes excluídos), mantendo as posições de design do grid.
     let gridTotal = 0
     let spawnIndex = 0
+    const roster = [
+      ...new Set(parsed.enemySpawns.map(s => s.enemyType).filter(t => t !== 'boss')),
+    ]
+      .map(id => ENEMY_TYPES.find(t => t.id === id))
+      .filter((t): t is EnemyTypeDefinition => t !== undefined)
     for (const spawn of parsed.enemySpawns) {
-      const type = ENEMY_TYPES.find(t => t.id === spawn.enemyType) ?? ENEMY_TYPES[0]
+      const markerType = ENEMY_TYPES.find(t => t.id === spawn.enemyType) ?? ENEMY_TYPES[0]
       const spawnId = `e${spawnIndex}`
       spawnIndex++
       const alreadyGone =
-        session.deadEnemies.has(spawnId) || (type.id === 'boss' && session.bossDefeated)
+        session.deadEnemies.has(spawnId) || (markerType.id === 'boss' && session.bossDefeated)
       if (alreadyGone) continue
-      const dupCount = type.id === 'boss' ? 1 : ENEMY_SPAWN_MULTIPLIER
-      for (let dup = 0; dup < dupCount; dup++) {
-        const pos = this.findEnemySpawnPosition(spawn.x, spawn.z, type.radius)
-        const enemy = createEnemy(
-          type,
-          pos.x,
-          pos.z,
-          enemyHealthMult,
-          this.enemyCombatModifiers(),
-        )
-        enemy.spawnId = spawnId
-        this.enemies.push(enemy)
-        this.scene.add(enemy.mesh)
-        this.spawnedEnemyCount++
-        gridTotal++
-        if (type.id === 'boss' && dup === 0) this.boss = enemy
-      }
+      const type =
+        markerType.id === 'boss' || roster.length === 0
+          ? markerType
+          : Math.random() < RANDOM_ENEMY_VARIANT_CHANCE
+            ? roster[Math.floor(Math.random() * roster.length)]
+            : markerType
+      const pos = this.findEnemySpawnPosition(spawn.x, spawn.z, type.radius)
+      const enemy = createEnemy(
+        type,
+        pos.x,
+        pos.z,
+        enemyHealthMult,
+        this.enemyCombatModifiers(),
+      )
+      enemy.spawnId = spawnId
+      this.enemies.push(enemy)
+      this.scene.add(enemy.mesh)
+      this.spawnedEnemyCount++
+      gridTotal++
+      if (type.id === 'boss') this.boss = enemy
     }
     this.totalEnemiesToSpawn = gridTotal + waveCountTotal * ENEMY_SPAWN_MULTIPLIER
 
