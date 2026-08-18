@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 const levelsDir = path.join(process.cwd(), 'src/levels/levels');
-const files = ['level-7.ts', 'level-10.ts', 'level-11.ts', 'level-12.ts', 'level-13.ts', 'level-14.ts', 'level-15.ts'];
+const files = ['level-7.ts', 'level-9.ts', 'level-10.ts', 'level-11.ts', 'level-12.ts', 'level-13.ts', 'level-14.ts', 'level-15.ts'];
 
 for (const file of files) {
   const content = fs.readFileSync(path.join(levelsDir, file), 'utf-8');

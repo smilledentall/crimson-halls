@@ -59,6 +59,8 @@ const DOOR_LABEL_FADE = 16
 /** Deslocamento do label de porta na direção em que a porta encara, para o
  *  sprite não ser cortado pela parede adjacente. */
 const DOOR_LABEL_OFFSET = 0.6
+/** Tamanho do pool fixo de luzes de efeito (muzzle flash, explosões). */
+const EFFECT_LIGHT_POOL_SIZE = 8
 
 /** Estado de sessão por nível: o que já foi eliminado/coletado/destravado. */
 interface LevelSessionState {
@@ -300,6 +302,17 @@ export class Engine {
     this.flashlight.position.set(0, 0, 0)
     this.flashlight.target.position.set(0, 0, -1)
     this.camera.add(this.flashlight.target)
+
+    // Pool fixo de luzes de efeito (muzzle flash/explosões): criadas uma vez e
+    // mantidas SEMPRE na cena. Adicionar/remover PointLight em runtime muda a
+    // contagem de luzes visíveis e obriga o three a recompilar os shaders de
+    // todos os materiais iluminados (paredes, inimigos) — causa das travadas.
+    // Aqui a contagem nunca muda: só a intensidade/posição/cor de cada slot.
+    for (let i = 0; i < EFFECT_LIGHT_POOL_SIZE; i++) {
+      const light = new THREE.PointLight(0xffd27a, 0, 14, 2)
+      this.scene.add(light)
+      this.effectLights.push({ light, life: 0, maxLife: 0 })
+    }
 
     // Log de diagnóstico: valores de iluminação realmente aplicados.
     console.log('[engine] iluminação aplicada:', {
@@ -623,28 +636,35 @@ export class Engine {
     if (this.renderer) this.renderer.toneMappingExposure = LIGHTING_CONFIG.exposure * brightness
   }
 
-  /** Luz temporária de efeito (explosão, muzzle flash) que decai e some. */
+  /** Luz temporária de efeito (explosão, muzzle flash) que decai e some.
+   *  Usa um slot do pool fixo (sem criar/remover luz na cena). */
   private addEffectLight(
     position: THREE.Vector3,
     color: number,
     intensity: number,
     life: number,
   ): void {
-    if (!this.scene) return
-    const light = new THREE.PointLight(color, intensity, 14, 2)
-    light.position.copy(position)
-    this.scene.add(light)
-    this.effectLights.push({ light, life, maxLife: life })
+    let slot = this.effectLights.find(e => e.life <= 0)
+    if (!slot) {
+      // Todos ativos: reutiliza o mais antigo (menor vida restante).
+      slot = this.effectLights[0]
+      for (const entry of this.effectLights) {
+        if (entry.life < slot.life) slot = entry
+      }
+    }
+    slot.light.color.setHex(color)
+    slot.light.intensity = intensity
+    slot.light.position.copy(position)
+    slot.life = life
+    slot.maxLife = life
   }
 
   private updateEffectLights(dt: number): void {
-    for (let i = this.effectLights.length - 1; i >= 0; i--) {
-      const entry = this.effectLights[i]
+    for (const entry of this.effectLights) {
       entry.life -= dt
       if (entry.life <= 0) {
-        this.scene?.remove(entry.light)
-        entry.light.dispose()
-        this.effectLights.splice(i, 1)
+        entry.light.intensity = 0
+        entry.life = 0
       } else {
         entry.light.intensity *= 1 - dt * 6
       }
@@ -1284,8 +1304,12 @@ export class Engine {
     const phase = useGameStore.getState().phase
     if (phase !== 'playing') return
     this.flashlightEnabled = !this.flashlightEnabled
+    // Muda a intensidade, não a visibilidade: o SpotLight fica sempre na cena
+    // para a contagem de luzes não variar (evita recompilação de shader).
     if (this.flashlight) {
-      this.flashlight.visible = this.flashlightEnabled
+      this.flashlight.intensity = this.flashlightEnabled
+        ? LIGHTING_CONFIG.flashlightIntensity
+        : 0
     }
     this.audio.play('flashlight_click')
     useGameStore.getState().setFlashlightState(this.flashlightEnabled)
@@ -1537,7 +1561,11 @@ export class Engine {
 
     // Sincroniza a lanterna com o estado do store (novo jogo/retry = ligada).
     this.flashlightEnabled = useGameStore.getState().flashlightEnabled
-    if (this.flashlight) this.flashlight.visible = this.flashlightEnabled
+    if (this.flashlight) {
+      this.flashlight.intensity = this.flashlightEnabled
+        ? LIGHTING_CONFIG.flashlightIntensity
+        : 0
+    }
 
     // Carrega as texturas do nível (se forem de imagem)
     const textures = await getLevelTextures(levelId)
@@ -2094,11 +2122,11 @@ export class Engine {
       entry.light.dispose()
     }
     this.levelLights = []
+    // Pool de efeito fica na cena (contagem constante); apenas zera os slots.
     for (const entry of this.effectLights) {
-      this.scene?.remove(entry.light)
-      entry.light.dispose()
+      entry.life = 0
+      entry.light.intensity = 0
     }
-    this.effectLights = []
   }
 
   /**
