@@ -14,6 +14,12 @@ export const ENEMY_SPAWN_MULTIPLIER = 1
  *  (variedade de encontro a cada entrada no nível). */
 export const RANDOM_ENEMY_VARIANT_CHANCE = 0.5
 
+/** Faixa do multiplicador aleatório de inimigos por entrada na fase: a cada
+ *  início de nível rola um valor entre MIN e MAX e multiplica os spawns fixos
+ *  do grid (chefes nunca duplicam). */
+export const MIN_RANDOM_ENEMY_MULTIPLIER = 2
+export const MAX_RANDOM_ENEMY_MULTIPLIER = 3
+
 /** Bônus de atributos por nível (composto com o base de player.config). */
 export const MAX_HEALTH_PER_LEVEL = 10
 export const SPEED_PER_LEVEL = 0.04

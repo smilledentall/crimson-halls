@@ -36,6 +36,8 @@ import { DIFFICULTIES } from '../state/difficulty.config'
 import {
   CURRENCY_PER_LEVEL_CLEAR,
   ENEMY_SPAWN_MULTIPLIER,
+  MAX_RANDOM_ENEMY_MULTIPLIER,
+  MIN_RANDOM_ENEMY_MULTIPLIER,
   RANDOM_ENEMY_VARIANT_CHANCE,
   REGEN_INTERVAL_SECONDS,
   SKILL_POINT_PER_LEVEL_CLEAR,
@@ -1626,9 +1628,13 @@ export class Engine {
     useGameStore.getState().setVictoryAvailable(false)
 
     // Spawn de inimigos: ignora spawns já eliminados nesta sessão.
-    // Cada marcador gera um único inimigo (sem duplicação); o tipo pode variar
-    // aleatoriamente dentro do roster da fase (tipos presentes nos marcadores,
-    // chefes excluídos), mantendo as posições de design do grid.
+    // Cada marcador gera um número aleatório de inimigos (2 a 3 cópias por
+    // entrada na fase); o tipo pode variar aleatoriamente dentro do roster da
+    // fase (tipos presentes nos marcadores, chefes excluídos), mantendo as
+    // posições de design do grid. Chefes nunca duplicam.
+    const enemyMult =
+      MIN_RANDOM_ENEMY_MULTIPLIER +
+      Math.floor(Math.random() * (MAX_RANDOM_ENEMY_MULTIPLIER - MIN_RANDOM_ENEMY_MULTIPLIER + 1))
     let gridTotal = 0
     let spawnIndex = 0
     const roster = [
@@ -1649,20 +1655,23 @@ export class Engine {
           : Math.random() < RANDOM_ENEMY_VARIANT_CHANCE
             ? roster[Math.floor(Math.random() * roster.length)]
             : markerType
-      const pos = this.findEnemySpawnPosition(spawn.x, spawn.z, type.radius)
-      const enemy = createEnemy(
-        type,
-        pos.x,
-        pos.z,
-        enemyHealthMult,
-        this.enemyCombatModifiers(),
-      )
-      enemy.spawnId = spawnId
-      this.enemies.push(enemy)
-      this.scene.add(enemy.mesh)
-      this.spawnedEnemyCount++
-      gridTotal++
-      if (type.id === 'boss') this.boss = enemy
+      const dupCount = type.id === 'boss' ? 1 : enemyMult
+      for (let dup = 0; dup < dupCount; dup++) {
+        const pos = this.findEnemySpawnPosition(spawn.x, spawn.z, type.radius)
+        const enemy = createEnemy(
+          type,
+          pos.x,
+          pos.z,
+          enemyHealthMult,
+          this.enemyCombatModifiers(),
+        )
+        enemy.spawnId = spawnId
+        this.enemies.push(enemy)
+        this.scene.add(enemy.mesh)
+        this.spawnedEnemyCount++
+        gridTotal++
+        if (type.id === 'boss') this.boss = enemy
+      }
     }
     this.totalEnemiesToSpawn = gridTotal + waveCountTotal * ENEMY_SPAWN_MULTIPLIER
 
