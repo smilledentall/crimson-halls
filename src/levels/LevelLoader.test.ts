@@ -89,13 +89,14 @@ describe('LevelLoader', () => {
 
   it('todos os níveis (campanha + secretos + ramificações) são conectados (flood-fill do spawn)', () => {
     for (const level of ALL_LEVELS) {
-      const rows = level.grid.length
-      const cols = level.grid[0].length
+      const grid = level.grid ?? []
+      const rows = grid.length
+      const cols = grid[0].length
       let start: [number, number] | null = null
       const markers: Array<[number, number]> = []
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-          const ch = level.grid[r][c]
+          const ch = grid[r][c]
           if (ch === 'P') start = [r, c]
           else if ('ESKTHADVCBNX'.includes(ch)) markers.push([r, c])
         }
@@ -116,7 +117,7 @@ describe('LevelLoader', () => {
           const nr = r + dr
           const nc = c + dc
           if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue
-          if (level.grid[nr][nc] === '#') continue
+          if (grid[nr][nc] === '#') continue
           const key = `${nr},${nc}`
           if (visited.has(key)) continue
           visited.add(key)
@@ -138,19 +139,20 @@ describe('LevelLoader', () => {
 
   it('todo cresset (X) do grid gera exatamente uma luz embutida na mesma posição; portas ganham cressets flanqueadores', () => {
     for (const level of ALL_LEVELS) {
+      const grid = level.grid ?? []
       const parsed = loader.parse(level)
       // Conta X no grid (cressets manuais)
       const gridX: Array<[number, number]> = []
-      for (let r = 0; r < level.grid.length; r++) {
-        for (let c = 0; c < level.grid[r].length; c++) {
-          if (level.grid[r][c] === 'X') gridX.push([c, r])
+      for (let r = 0; r < grid.length; r++) {
+        for (let c = 0; c < grid[r].length; c++) {
+          if (grid[r][c] === 'X') gridX.push([c, r])
         }
       }
       // Conta portas no grid
       const gridDoors: Array<[number, number]> = []
-      for (let r = 0; r < level.grid.length; r++) {
-        for (let c = 0; c < level.grid[r].length; c++) {
-          if (level.grid[r][c] === 'D') gridDoors.push([c, r])
+      for (let r = 0; r < grid.length; r++) {
+        for (let c = 0; c < grid[r].length; c++) {
+          if (grid[r][c] === 'D') gridDoors.push([c, r])
         }
       }
       // Total de cressets deve ser >= X manuais (pois portas adicionam flanqueadores)

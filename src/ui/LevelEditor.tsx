@@ -295,11 +295,12 @@ export function LevelEditor() {
     event.target.value = ''
     const level = LEVELS[index]
     if (!level) return
-    setGrid(level.grid.map(row => row.split('')))
+    const grid = level.grid ?? []
+    setGrid(grid.map(row => row.split('')))
     setLevelName(level.name)
     setLevelId(level.id)
-    setRowsInput(level.grid.length)
-    setColsInput(level.grid[0].length)
+    setRowsInput(grid.length)
+    setColsInput(grid[0].length)
     setDoorTargets((level.doors ?? []).map(door => door.targetLevelId ?? ''))
     setJsonText(JSON.stringify(level, null, 2))
   }

@@ -246,11 +246,47 @@ function scaleBoxUVs(
   uv.needsUpdate = true
 }
 
+/** Definição de um andar/piso de nível multi-andar (novo formato). */
+export interface FloorDefinition {
+  /** Identificador único do andar (ex.: 'floor-1'). */
+  id: string
+  /** Nome opcional para exibição (ex.: 'Térreo'). */
+  name?: string
+  /** Grid 2D do andar (mesmos caracteres do formato legado). */
+  grid: string[]
+  /** Altura base do piso (Y), em metros. */
+  height: number
+  /** Portas exclusivas do andar (opcional). */
+  doors?: DoorDefinition[]
+  /** Válvulas/alavancas exclusivas do andar (opcional). */
+  levers?: LeverDefinition[]
+  /** Atmosfera específica do andar (opcional). */
+  atmosphere?: LevelAtmosphere
+}
+
+/** Definição de uma escada entre andares (novo formato). */
+export interface StairDefinition {
+  /** Identificador único da escada. */
+  id: string
+  /** ID do andar de origem. */
+  fromFloor: string
+  /** ID do andar de destino. */
+  toFloor: string
+  /** Marcador no grid de origem (ex.: 'L1'). */
+  fromMarker: string
+  /** Marcador no grid de destino (ex.: 'l1'). */
+  toMarker: string
+  /** Direção da escada. */
+  direction: 'up' | 'down'
+}
+
 export interface LevelDefinition {
   id: string
   name: string
-  /** Grid visto de cima; cada caractere é uma célula de TILE_SIZE x TILE_SIZE. */
-  grid: string[]
+  /** Grid visto de cima; cada caractere é uma célula de TILE_SIZE x TILE_SIZE.
+   *  Presente no formato legado (andar único); ausente em níveis com `floors`
+   *  (o conteúdo vive em cada `FloorDefinition.grid`). */
+  grid?: string[]
   /** Portas (saídas): cada 'D' do grid recebe um marcador D1, D2... em ordem de varredura. */
   doors?: DoorDefinition[]
   /** Válvulas/alavancas: cada 'V' do grid recebe um marcador V1, V2... */
@@ -261,6 +297,13 @@ export interface LevelDefinition {
   waveSpawns?: Array<{ x: number; z: number }>
   /** Atmosfera específica do nível (névoa/luz) — opcional. */
   atmosphere?: LevelAtmosphere
+  /** Novo formato multi-andar: andares do nível (opcional; se presente, usa
+   *  parseMultiFloor e o grid raiz fica vazio). */
+  floors?: FloorDefinition[]
+  /** Novo formato multi-andar: escadas entre os andares (opcional). */
+  stairs?: StairDefinition[]
+  /** Novo formato multi-andar: andar inicial (padrão: primeiro andar). */
+  startFloorId?: string
 }
 
 export interface DoorDefinition {
@@ -393,7 +436,22 @@ const CHAR_NOTE = 'N'
  * de um grid de texto. Os spawns ficam no centro da célula.
  */
 export class LevelLoader {
+  /**
+   * Suporta os dois formatos: se a definição tem `floors` usa o parser
+   * multi-andar; caso contrário, usa o parser legado (andar único) — sem
+   * nenhuma mudança de comportamento para os níveis existentes.
+   */
   parse(definition: LevelDefinition): ParsedLevel {
+    if (definition.floors && definition.floors.length > 0) {
+      return this.parseMultiFloor(definition)
+    }
+    return this.parseLegacy(definition)
+  }
+
+  /**
+   * Parser legado (andar único): comportamento atual, inalterado.
+   */
+  private parseLegacy(definition: LevelDefinition): ParsedLevel {
     const walls: WallAABB[] = []
     const enemySpawns: EnemySpawn[] = []
     const pickups: PickupSpawn[] = []
@@ -403,12 +461,15 @@ export class LevelLoader {
     const notes: Array<{ x: number; z: number }> = []
     let playerSpawn = { x: TILE_SIZE, z: TILE_SIZE, yaw: 0 }
 
-    const rows = definition.grid.length
-    const cols = Math.max(...definition.grid.map(row => row.length))
+    // O parser legado só é chamado quando não há `floors`; ainda assim o grid
+    // é opcional no tipo — ausência vira nível vazio (seguro, sem crash).
+    const grid = definition.grid ?? []
+    const rows = grid.length
+    const cols = Math.max(...grid.map(row => row.length))
 
     for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < definition.grid[row].length; col++) {
-        const char = definition.grid[row][col]
+      for (let col = 0; col < grid[row].length; col++) {
+        const char = grid[row][col]
         const x = col * TILE_SIZE
         const z = row * TILE_SIZE
         switch (char) {
@@ -445,10 +506,10 @@ export class LevelLoader {
           case CHAR_CRESSET: {
             const cx = x + TILE_SIZE / 2
             const cz = z + TILE_SIZE / 2
-            const wallAbove = row > 0 && definition.grid[row - 1][col] === '#'
-            const wallBelow = row < rows - 1 && definition.grid[row + 1]?.[col] === '#'
-            const wallLeft = col > 0 && definition.grid[row][col - 1] === '#'
-            const wallRight = col < definition.grid[row].length - 1 && definition.grid[row][col + 1] === '#'
+            const wallAbove = row > 0 && grid[row - 1][col] === '#'
+            const wallBelow = row < rows - 1 && grid[row + 1]?.[col] === '#'
+            const wallLeft = col > 0 && grid[row][col - 1] === '#'
+            const wallRight = col < grid[row].length - 1 && grid[row][col + 1] === '#'
             // Desloca o cresset para perto da parede adjacente (como uma tocha
             // de corredor), em vez de deixá-lo no centro da célula obstruindo
             // o caminho. Sem parede ao lado, mantém centralizado.
@@ -479,7 +540,7 @@ export class LevelLoader {
             // Marcador D1, D2... em ordem de varredura (linha, depois coluna).
             const marker = `D${doors.length + 1}`
             const config = (definition.doors ?? []).find(door => door.marker === marker)
-            const doorPlacement = computeDoorPlacement(definition.grid, row, col)
+            const doorPlacement = computeDoorPlacement(grid, row, col)
             doors.push({
               marker,
               x: doorPlacement.x,
@@ -493,7 +554,7 @@ export class LevelLoader {
             })
 
             // Adiciona dois cressets flanqueando a porta na mesma parede
-            const doorCressets = computeDoorCressets(definition.grid, row, col, doorPlacement)
+            const doorCressets = computeDoorCressets(grid, row, col, doorPlacement)
             for (const cr of doorCressets) {
               cressets.push({
                 x: cr.x,
@@ -542,6 +603,32 @@ export class LevelLoader {
       waveSpawns: definition.waveSpawns ?? [],
       atmosphere: definition.atmosphere ?? {},
       bounds: { minX: 0, maxX: cols * TILE_SIZE, minZ: 0, maxZ: rows * TILE_SIZE },
+    }
+  }
+
+  /**
+   * Parser multi-andar (novo formato). STUB nesta fase: implementação
+   * completa (geometria por andar, escadas, spawns com floorId) chega em
+   * uma fase posterior. Por ora retorna um ParsedLevel vazio e seguro,
+   * apenas para não quebrar o fluxo quando uma definição com `floors`
+   * for encontrada.
+   */
+  private parseMultiFloor(definition: LevelDefinition): ParsedLevel {
+    return {
+      id: definition.id,
+      name: definition.name,
+      walls: [],
+      playerSpawn: { x: TILE_SIZE, z: TILE_SIZE, yaw: 0 },
+      enemySpawns: [],
+      pickups: [],
+      cressets: [],
+      doors: [],
+      levers: [],
+      notes: [],
+      waves: [],
+      waveSpawns: [],
+      atmosphere: definition.atmosphere ?? {},
+      bounds: { minX: 0, maxX: 0, minZ: 0, maxZ: 0 },
     }
   }
 
