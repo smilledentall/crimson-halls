@@ -362,6 +362,27 @@ export interface ParsedLever {
   label: string
 }
 
+/** Escada já posicionada no grid (par resultado do cruzamento dos marcadores
+ *  'L'/'l' com a configuração `stairs`). Uma entrada por lado: o marcador 'L'
+ *  vira uma entrada com destino no 'l', e o 'l' vira uma entrada de volta. */
+export interface ParsedStair {
+  id: string
+  /** Andar onde fica a ENTRADA desta escada. */
+  floorId: string
+  /** Andar de destino. */
+  targetFloorId: string
+  /** Posição da entrada (centro da célula do marcador). */
+  x: number
+  z: number
+  /** Posição de chegada no andar de destino (centro do marcador parceiro). */
+  targetX: number
+  targetZ: number
+  /** 'up' = sobe do andar atual; 'down' = desce. */
+  direction: 'up' | 'down'
+  /** Marcador do grid (ex.: 'L1'/'l1'). */
+  marker: string
+}
+
 export interface WaveDefinition {
   enemyType: string
   count: number
@@ -398,6 +419,19 @@ export interface CressetSpawn {
   lightHeight: number
 }
 
+export interface ParsedFloor {
+  id: string
+  name: string
+  /** Altura base do piso (Y), em metros. */
+  height: number
+  walls: WallAABB[]
+  bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
+  /** Spawn do jogador definido neste andar (P); ausente se não houver. */
+  playerSpawn?: { x: number; z: number; yaw: number }
+  /** Entradas de escada localizadas neste andar (marcadores L/l). */
+  stairs?: ParsedStair[]
+}
+
 export interface ParsedLevel {
   id: string
   name: string
@@ -414,6 +448,12 @@ export interface ParsedLevel {
   waveSpawns: Array<{ x: number; z: number }>
   atmosphere: LevelAtmosphere
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
+  /** Escadas posicionadas (entradas nos respectivos andares). */
+  stairs: ParsedStair[]
+  /** Multi-andar: andares parseados (ausente no formato legado). */
+  floors?: ParsedFloor[]
+  /** Multi-andar: andar ativo inicial (ausente no formato legado). */
+  startFloorId?: string
 }
 
 const CHAR_WALL = '#'
@@ -430,6 +470,8 @@ const CHAR_CRESSET = 'X'
 const CHAR_DOOR = 'D'
 const CHAR_LEVER = 'V'
 const CHAR_NOTE = 'N'
+const CHAR_STAIR_UP = 'L'
+const CHAR_STAIR_DOWN = 'l'
 
 /**
  * Constrói os dados de colisão (AABBs) e a geometria do nível a partir
@@ -602,33 +644,132 @@ export class LevelLoader {
       waves: definition.waves ?? [],
       waveSpawns: definition.waveSpawns ?? [],
       atmosphere: definition.atmosphere ?? {},
+      stairs: [],
       bounds: { minX: 0, maxX: cols * TILE_SIZE, minZ: 0, maxZ: rows * TILE_SIZE },
     }
   }
 
   /**
-   * Parser multi-andar (novo formato). STUB nesta fase: implementação
-   * completa (geometria por andar, escadas, spawns com floorId) chega em
-   * uma fase posterior. Por ora retorna um ParsedLevel vazio e seguro,
-   * apenas para não quebrar o fluxo quando uma definição com `floors`
-   * for encontrada.
+   * Parser multi-andar (novo formato): para cada andar extrai paredes (com
+   * `floorId`), spawn do jogador ('P') e limites; o nível inteiro usa o spawn
+   * do andar inicial. Nesta fase não há inimigos, portas, cressets, alavancas,
+   * pickups nem notas por andar — o foco é o teste estrutural isolado (§9).
    */
   private parseMultiFloor(definition: LevelDefinition): ParsedLevel {
+    // Células de escada por andar: key = `${floorId}:${marker}`.
+    const stairCells = new Map<string, { x: number; z: number }>()
+
+    const floors: ParsedFloor[] = (definition.floors ?? []).map(floor => {
+      const walls: WallAABB[] = []
+      let playerSpawn: { x: number; z: number; yaw: number } | undefined
+      const grid = floor.grid
+      const rows = grid.length
+      const cols = Math.max(1, ...grid.map(row => row.length))
+      let stairUpCount = 0
+      let stairDownCount = 0
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < grid[row].length; col++) {
+          const char = grid[row][col]
+          const x = col * TILE_SIZE
+          const z = row * TILE_SIZE
+          if (char === CHAR_WALL) {
+            walls.push({
+              minX: x,
+              maxX: x + TILE_SIZE,
+              minZ: z,
+              maxZ: z + TILE_SIZE,
+              floorId: floor.id,
+            })
+          } else if (char === CHAR_PLAYER) {
+            playerSpawn = { x: x + TILE_SIZE / 2, z: z + TILE_SIZE / 2, yaw: 0 }
+          } else if (char === CHAR_STAIR_UP) {
+            stairUpCount++
+            stairCells.set(`${floor.id}:L${stairUpCount}`, {
+              x: x + TILE_SIZE / 2,
+              z: z + TILE_SIZE / 2,
+            })
+          } else if (char === CHAR_STAIR_DOWN) {
+            stairDownCount++
+            stairCells.set(`${floor.id}:l${stairDownCount}`, {
+              x: x + TILE_SIZE / 2,
+              z: z + TILE_SIZE / 2,
+            })
+          }
+        }
+      }
+
+      return {
+        id: floor.id,
+        name: floor.name ?? humanizeLevelId(floor.id),
+        height: floor.height,
+        walls,
+        playerSpawn,
+        bounds: { minX: 0, maxX: cols * TILE_SIZE, minZ: 0, maxZ: rows * TILE_SIZE },
+      }
+    })
+
+    // Monta as escadas: cada stair do grid vira duas entradas (ida e volta).
+    const stairs: ParsedStair[] = []
+    for (const stairDef of definition.stairs ?? []) {
+      const from = stairCells.get(`${stairDef.fromFloor}:${stairDef.fromMarker}`)
+      const to = stairCells.get(`${stairDef.toFloor}:${stairDef.toMarker}`)
+      if (!from || !to) continue
+      stairs.push({
+        id: stairDef.id,
+        floorId: stairDef.fromFloor,
+        targetFloorId: stairDef.toFloor,
+        x: from.x,
+        z: from.z,
+        targetX: to.x,
+        targetZ: to.z,
+        direction: stairDef.direction,
+        marker: stairDef.fromMarker,
+      })
+      stairs.push({
+        id: `${stairDef.id}-reverse`,
+        floorId: stairDef.toFloor,
+        targetFloorId: stairDef.fromFloor,
+        x: to.x,
+        z: to.z,
+        targetX: from.x,
+        targetZ: from.z,
+        direction: stairDef.direction === 'up' ? 'down' : 'up',
+        marker: stairDef.toMarker,
+      })
+    }
+
+    // Distribui as entradas nos andares correspondentes.
+    for (const floor of floors) {
+      floor.stairs = stairs.filter(stair => stair.floorId === floor.id)
+    }
+
+    const startFloor =
+      floors.find(floor => floor.id === definition.startFloorId) ?? floors[0]
+
     return {
       id: definition.id,
       name: definition.name,
-      walls: [],
-      playerSpawn: { x: TILE_SIZE, z: TILE_SIZE, yaw: 0 },
+      walls: floors.flatMap(floor => floor.walls),
+      playerSpawn: startFloor?.playerSpawn ?? { x: TILE_SIZE, z: TILE_SIZE, yaw: 0 },
       enemySpawns: [],
       pickups: [],
       cressets: [],
       doors: [],
       levers: [],
       notes: [],
-      waves: [],
-      waveSpawns: [],
+      waves: definition.waves ?? [],
+      waveSpawns: definition.waveSpawns ?? [],
       atmosphere: definition.atmosphere ?? {},
-      bounds: { minX: 0, maxX: 0, minZ: 0, maxZ: 0 },
+      bounds: {
+        minX: 0,
+        maxX: Math.max(0, ...floors.map(floor => floor.bounds.maxX)),
+        minZ: 0,
+        maxZ: Math.max(0, ...floors.map(floor => floor.bounds.maxZ)),
+      },
+      stairs,
+      floors,
+      startFloorId: startFloor?.id,
     }
   }
 
@@ -636,13 +777,43 @@ export class LevelLoader {
   buildLevel(parsed: ParsedLevel, textures: LevelTextures): THREE.Group {
     const group = new THREE.Group()
 
+    if (parsed.floors && parsed.floors.length > 0) {
+      for (const floor of parsed.floors) {
+        group.add(this.buildFloorGroup(floor, textures))
+      }
+    } else {
+      group.add(
+        this.buildFloorGroup(
+          {
+            id: '',
+            name: parsed.name,
+            height: 0,
+            walls: parsed.walls,
+            bounds: parsed.bounds,
+          },
+          textures,
+        ),
+      )
+      for (const cresset of parsed.cressets) {
+        group.add(this.buildCresset(cresset))
+      }
+    }
+
+    return group
+  }
+
+  /** Geometria de um andar: paredes (com floorId), chão e teto. */
+  private buildFloorGroup(floor: ParsedFloor, textures: LevelTextures): THREE.Group {
+    const group = new THREE.Group()
+    const { bounds, height } = floor
+
     const wallGeometries: THREE.BufferGeometry[] = []
-    for (const wall of parsed.walls) {
+    for (const wall of floor.walls) {
       const width = wall.maxX - wall.minX
       const depth = wall.maxZ - wall.minZ
       const geo = new THREE.BoxGeometry(width, WALL_HEIGHT, depth)
       scaleBoxUVs(geo, width, depth, WALL_HEIGHT, TILE_SIZE)
-      geo.translate(wall.minX + width / 2, WALL_HEIGHT / 2, wall.minZ + depth / 2)
+      geo.translate(wall.minX + width / 2, height + WALL_HEIGHT / 2, wall.minZ + depth / 2)
       wallGeometries.push(geo)
     }
 
@@ -658,12 +829,12 @@ export class LevelLoader {
         const wallMesh = new THREE.Mesh(merged, material)
         // Marca para a engine coletar e usar como bloqueador no raycast.
         wallMesh.userData.isWall = true
+        wallMesh.userData.floorId = floor.id
         group.add(wallMesh)
       }
     }
     for (const geo of wallGeometries) geo.dispose()
 
-    const { bounds } = parsed
     const floorRepeatX = Math.max(1, Math.round(bounds.maxX / TILE_SIZE))
     const floorRepeatZ = Math.max(1, Math.round(bounds.maxZ / TILE_SIZE))
 
@@ -685,9 +856,9 @@ export class LevelLoader {
           emissiveIntensity: 0.9,
         })
       : new THREE.MeshStandardMaterial({ map: floorTexture, roughness: 0.95, metalness: 0 })
-    const floor = new THREE.Mesh(floorGeo, floorMaterial)
-    floor.position.set(bounds.maxX / 2, 0, bounds.maxZ / 2)
-    group.add(floor)
+    const floorMesh = new THREE.Mesh(floorGeo, floorMaterial)
+    floorMesh.position.set(bounds.maxX / 2, height, bounds.maxZ / 2)
+    group.add(floorMesh)
 
     const ceilingTexture = textures.ceiling.clone()
     ceilingTexture.needsUpdate = true
@@ -701,13 +872,54 @@ export class LevelLoader {
       ceilingGeo,
       new THREE.MeshStandardMaterial({ map: ceilingTexture, roughness: 1, metalness: 0 }),
     )
-    ceiling.position.set(bounds.maxX / 2, WALL_HEIGHT, bounds.maxZ / 2)
+    ceiling.position.set(bounds.maxX / 2, height + WALL_HEIGHT, bounds.maxZ / 2)
     group.add(ceiling)
 
-    for (const cresset of parsed.cressets) {
-      group.add(this.buildCresset(cresset))
+    // Escadas (visual placeholder): degraus ascendentes + marcador emissivo.
+    for (const stair of floor.stairs ?? []) {
+      group.add(this.buildStair(stair, height))
     }
 
+    return group
+  }
+
+  /** Visual placeholder de escada: degraus subindo até um marcador emissivo. */
+  private buildStair(stair: ParsedStair, floorHeight: number): THREE.Group {
+    const group = new THREE.Group()
+    const stone = new THREE.MeshStandardMaterial({
+      color: 0x4a4a55,
+      roughness: 0.85,
+      metalness: 0.2,
+    })
+    const glow = new THREE.MeshStandardMaterial({
+      color: 0xffa34a,
+      emissive: 0xff7a22,
+      emissiveIntensity: 0.9,
+      roughness: 0.5,
+      metalness: 0,
+    })
+
+    // Três degraus ascendentes ao longo de -Z (virados para quem chega).
+    const stepGeo = new THREE.BoxGeometry(1.5, 0.8, 1.0)
+    const step1 = new THREE.Mesh(stepGeo, stone)
+    step1.position.set(0, floorHeight + 0.4, 0.6)
+    const step2 = new THREE.Mesh(stepGeo, stone)
+    step2.position.set(0, floorHeight + 1.2, -0.4)
+    const step3 = new THREE.Mesh(stepGeo, stone)
+    step3.position.set(0, floorHeight + 2.0, -1.4)
+    group.add(step1, step2, step3)
+
+    // Marcador emissivo no topo da escada (indica o ponto de interação).
+    const marker = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.3, 0.6), glow)
+    marker.position.set(0, floorHeight + 2.55, -1.4)
+    group.add(marker)
+
+    // Pequena coluna de apoio para dar presença física à entrada.
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.1, 0.25), stone)
+    post.position.set(0, floorHeight + 0.55, 0.1)
+    group.add(post)
+
+    group.position.set(stair.x, 0, stair.z)
     return group
   }
 

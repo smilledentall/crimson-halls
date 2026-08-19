@@ -28,7 +28,7 @@ import { Projectile } from '../entities/Projectile'
 import { Rocket } from '../entities/Rocket'
 import { LevelLoader, WALL_HEIGHT } from '../levels/LevelLoader'
 import { getLevelTextures } from './LevelTextureLoader'
-import type { ParsedLevel, WaveDefinition } from '../levels/LevelLoader'
+import type { ParsedLevel, ParsedStair, WaveDefinition } from '../levels/LevelLoader'
 import { LEVELS_BY_ID, VICTORY_LEVEL_ID } from '../levels/levels'
 import { useGameStore, maxHealthFor } from '../state/gameStore'
 import type { GamePhase } from '../state/gameStore'
@@ -209,6 +209,7 @@ export class Engine {
   private exitPointerIntentional = false
   private lastStepTime = 0
   private pauseKeyHeld = false
+  private debugFloorKeyHeld = false
   private frameCount = 0
   private lastFpsSampleTime = 0
   private unsubscribe: (() => void) | null = null
@@ -453,7 +454,10 @@ export class Engine {
     const context: WeaponContext = {
       camera,
       getTargets: () => {
-        const targets: THREE.Object3D[] = [...this.wallMeshes]
+        const floor = this.collision.getCurrentFloor()
+        const targets: THREE.Object3D[] = this.wallMeshes.filter(
+          mesh => (mesh.userData.floorId ?? '') === floor,
+        )
         for (const enemy of this.enemies) {
           if (enemy.alive) targets.push(enemy.hitMesh)
         }
@@ -549,10 +553,12 @@ export class Engine {
       this.handlePauseKey()
       this.handleFlashlightKey()
       this.handleShieldKey()
+      this.handleDebugFloorKey()
       this.updateShieldAudio()
       this.updateCombatMusic()
       this.updateDoorInteraction()
       this.updateLeverInteraction()
+      this.updateStairInteraction()
       this.updateNoteInteraction()
       this.handleInteractKey()
       this.updateBossBar()
@@ -1183,9 +1189,11 @@ export class Engine {
     ctx.fillStyle = 'rgba(8, 3, 4, 0.78)'
     ctx.fillRect(0, 0, w, h)
 
-    // Paredes.
+    // Paredes (somente do andar atual; andar único usa '' para todas).
     ctx.fillStyle = '#4a2a30'
+    const floor = this.collision.getCurrentFloor()
     for (const wall of parsed.walls) {
+      if ((wall.floorId ?? '') !== floor) continue
       ctx.fillRect(
         ox + wall.minX * scale,
         oz + wall.minZ * scale,
@@ -1319,6 +1327,25 @@ export class Engine {
     useGameStore.getState().setFlashlightState(this.flashlightEnabled)
   }
 
+  /** Tecla F (edge trigger): troca de andar no modo multi-andar (teste). */
+  private handleDebugFloorKey(): void {
+    const pressed = this.input?.isKeyDown('KeyF') ?? false
+    if (pressed && !this.debugFloorKeyHeld) {
+      const parsed = this.currentParsed
+      const floors = parsed?.floors
+      if (floors && floors.length > 1) {
+        const current = this.collision.getCurrentFloor()
+        const next = floors.find(floor => floor.id !== current) ?? floors[0]
+        this.collision.setCurrentFloor(next.id)
+        if (this.player) {
+          this.player.position.y = next.height + PLAYER_CONFIG.eyeHeight
+        }
+        console.log(`[debug] andar ${current} -> ${next.id} (y=${next.height})`)
+      }
+    }
+    this.debugFloorKeyHeld = pressed
+  }
+
   /** Tecla Q ativa escudo (edge trigger) se não estiver ativo nem em cooldown. */
   private handleShieldKey(): void {
     const pressed = this.input?.isShieldKeyDown() ?? false
@@ -1395,6 +1422,24 @@ export class Engine {
     }
   }
 
+    /** Detecta a escada mais próxima (no andar atual) e expõe o prompt no store. */
+  private updateStairInteraction(): void {
+    if (!this.player) return
+    let nearest: ParsedStair | null = null
+    let nearestDist = Infinity
+    const currentFloor = this.collision.getCurrentFloor()
+    for (const stair of this.currentParsed?.stairs ?? []) {
+      if (stair.floorId !== currentFloor) continue
+      const dist = Math.hypot(stair.x - this.player.position.x, stair.z - this.player.position.z)
+      if (dist < DOOR_INTERACT_RANGE && dist < nearestDist) {
+        nearest = stair
+        nearestDist = dist
+      }
+    }
+    const current = useGameStore.getState().interactableStair
+    if (current !== nearest) useGameStore.getState().setInteractableStair(nearest)
+  }
+
   /** Tecla G (edge trigger): usa a porta (saída da campanha = epílogo), etc. */
   private handleInteractKey(): void {
     const pressed = this.input?.isKeyDown('KeyG') ?? false
@@ -1413,11 +1458,25 @@ export class Engine {
         }
       } else if (store.interactableLever) {
         this.activateLever(store.interactableLever.marker)
+      } else if (store.interactableStair) {
+        this.transitionViaStair(store.interactableStair)
       } else if (store.interactableNote) {
         useGameStore.getState().setNoteModal(getSecretNote(this.currentLevelId))
       }
     }
     this.interactKeyHeld = pressed
+  }
+
+  /** Teleporta o jogador para o andar de destino da escada (yaw preservado). */
+  private transitionViaStair(stair: ParsedStair): void {
+    if (!this.player) return
+    const floor = this.currentParsed?.floors?.find(f => f.id === stair.targetFloorId)
+    if (!floor) return
+    this.collision.setCurrentFloor(stair.targetFloorId)
+    this.player.position.set(stair.targetX, floor.height + PLAYER_CONFIG.eyeHeight, stair.targetZ)
+    this.audio.play('door')
+    useGameStore.getState().setInteractableStair(null)
+    console.log(`[stair] ${stair.id}: ${stair.floorId} -> ${stair.targetFloorId}`)
   }
 
   /** Detecta se há uma nota de lore por perto e expõe o prompt. */
@@ -1578,6 +1637,7 @@ export class Engine {
 
     this.clearLevel()
     this.collision.setWalls(parsed.walls)
+    this.collision.setCurrentFloor(parsed.startFloorId ?? '')
 
     // Reaproveita a malha estática (paredes/chão/teto) já gerada para este nível.
     const groupKey = definition.id
@@ -2120,6 +2180,7 @@ export class Engine {
     this.levelCleared = false
     useGameStore.getState().setInteractableDoor(null)
     useGameStore.getState().setInteractableLever(null)
+    useGameStore.getState().setInteractableStair(null)
     useGameStore.getState().setLevelCleared(false)
   }
 

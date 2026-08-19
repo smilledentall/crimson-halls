@@ -5,7 +5,7 @@ import type { WeaponId } from '../weapons/weapons.config'
 import { WEAPONS, WEAPON_ORDER } from '../weapons/weapons.config'
 import { applyWeaponUpgrades, weaponUpgradeCost } from '../weapons/weapon-upgrades'
 import { LEVELS_BY_ID } from '../levels/levels'
-import type { LevelDefinition } from '../levels/LevelLoader'
+import type { LevelDefinition, ParsedStair } from '../levels/LevelLoader'
 import { clearSave, loadGame, saveGame, saveProgress } from './saveSystem'
 import { DIFFICULTIES } from './difficulty.config'
 import type { DifficultyId } from './difficulty.config'
@@ -45,6 +45,8 @@ export interface GameStore {
   } | null
   /** Válvula/alavanca próxima do jogador. Nulo = nenhuma. */
   interactableLever: { label: string; marker: string } | null
+  /** Escada próxima do jogador (transição de andar). Nulo = nenhuma. */
+  interactableStair: ParsedStair | null
   /** Barra de chefe fixa no topo (nome + vida). Nulo = sem chefe ativo. */
   bossBar: { name: string; ratio: number } | null
   /** Setor limpo (todos os inimigos mortos) — destrava as portas. */
@@ -107,6 +109,7 @@ export interface GameStore {
     } | null,
   ) => void
   setInteractableLever: (lever: { label: string; marker: string } | null) => void
+  setInteractableStair: (stair: ParsedStair | null) => void
   setBossBar: (bar: { name: string; ratio: number } | null) => void
   setLevelCleared: (cleared: boolean) => void
   setLevelIntro: (intro: { title: string; lines: string[] } | null) => void
@@ -220,6 +223,7 @@ export const useGameStore = create<GameStore>(set => {
     difficulty: 'normal',
     interactableDoor: null,
     interactableLever: null,
+    interactableStair: null,
     bossBar: null,
     levelCleared: false,
     fade: 0,
@@ -412,6 +416,7 @@ export const useGameStore = create<GameStore>(set => {
 
     setInteractableDoor: door => set({ interactableDoor: door }),
     setInteractableLever: lever => set({ interactableLever: lever }),
+    setInteractableStair: stair => set({ interactableStair: stair }),
     setBossBar: bar => set({ bossBar: bar }),
     setLevelCleared: cleared => set({ levelCleared: cleared }),
 

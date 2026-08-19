@@ -21,6 +21,7 @@ import { level12 } from './level-12'
 import { level13 } from './level-13'
 import { level14 } from './level-14'
 import { level15 } from './level-15'
+import { levelMultiFloorTest } from './level-multifloor-test'
 import { levelVictory } from './level-victory'
 
 /** Id do nível-sentinela da saída da campanha (porta de vitória). */
@@ -50,6 +51,7 @@ export const ALL_LEVELS: LevelDefinition[] = [
   level3cSecret,
   level4bSecret,
   level5bSecret,
+  levelMultiFloorTest,
   levelVictory,
 ]
 

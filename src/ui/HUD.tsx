@@ -21,6 +21,7 @@ export function HUD() {
   const levelId = useGameStore(state => state.levelId)
   const interactableDoor = useGameStore(state => state.interactableDoor)
   const interactableLever = useGameStore(state => state.interactableLever)
+  const interactableStair = useGameStore(state => state.interactableStair)
   const interactableNote = useGameStore(state => state.interactableNote)
   const noteModal = useGameStore(state => state.noteModal)
   const bossBar = useGameStore(state => state.bossBar)
@@ -152,6 +153,12 @@ export function HUD() {
 
       {interactableLever && (
         <div className="lever-prompt">G — Ativar {interactableLever.label}</div>
+      )}
+
+      {interactableStair && (
+        <div className="lever-prompt">
+          G — {interactableStair.direction === 'up' ? 'Subir' : 'Descer'} a escada
+        </div>
       )}
 
       {interactableNote && !noteModal && <div className="door-prompt">G — Ler nota</div>}

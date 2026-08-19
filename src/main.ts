@@ -5,6 +5,7 @@ import { App } from './App'
 import { Engine } from './core/Engine'
 import { useGameStore } from './state/gameStore'
 import { WEAPON_ORDER } from './weapons/weapons.config'
+import { LEVELS_BY_ID } from './levels/levels'
 
 // Log de depuração (etapa de validação): mostra mudanças de estado no console.
 useGameStore.subscribe((state, prev) => {
@@ -25,6 +26,14 @@ const container = document.getElementById('root')
 
 // Acesso direto ao editor via hash: /#editor
 if (window.location.hash === '#editor') useGameStore.getState().setPhase('editor')
+
+// Acesso de debug a um nível via hash: /#test=level-multifloor-test
+// Carrega direto no jogo pelo caminho customLevel (fora de save/campanha).
+if (window.location.hash.startsWith('#test=')) {
+  const levelId = decodeURIComponent(window.location.hash.slice(6))
+  const level = LEVELS_BY_ID[levelId]
+  if (level) useGameStore.getState().playCustomLevel(level)
+}
 
 if (container) {
   createRoot(container).render(createElement(App, { engine }))

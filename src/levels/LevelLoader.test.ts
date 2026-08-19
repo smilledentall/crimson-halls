@@ -1,9 +1,61 @@
 import { describe, expect, it } from 'vitest'
 import { LevelLoader, TILE_SIZE, computeDoorPlacement } from './LevelLoader'
 import { ALL_LEVELS } from './levels'
+import { levelMultiFloorTest } from './levels/level-multifloor-test'
 import { LIGHTING_CONFIG } from '../core/lighting.config'
 
 const loader = new LevelLoader()
+
+/** Flood-fill de um grid: confere que todos os marcadores são alcançáveis. */
+function checkGridConnectivity(grid: string[], label: string, expectSpawn: boolean): void {
+  const rows = grid.length
+  const cols = grid[0].length
+  let start: [number, number] | null = null
+  const markers: Array<[number, number]> = []
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const ch = grid[r][c]
+      if (ch === 'P') start = [r, c]
+      else if ('ESKTHADVCBNX'.includes(ch)) markers.push([r, c])
+    }
+  }
+  if (expectSpawn) expect(start, `${label} tem spawn`).not.toBeNull()
+
+  // Origem do flood-fill: o spawn ou a primeira célula aberta (andar sem P).
+  const origin: [number, number] | null = start ?? (() => {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid[r][c] !== '#') return [r, c]
+      }
+    }
+    return null
+  })()
+  if (!origin) return
+
+  const visited = new Set<string>()
+  const queue: Array<[number, number]> = [origin]
+  visited.add(origin.join(','))
+  while (queue.length > 0) {
+    const [r, c] = queue.shift()!
+    for (const [dr, dc] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const nr = r + dr
+      const nc = c + dc
+      if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue
+      if (grid[nr][nc] === '#') continue
+      const key = `${nr},${nc}`
+      if (visited.has(key)) continue
+      visited.add(key)
+      queue.push([nr, nc])
+    }
+  }
+  const unreachable = markers.filter(([r, c]) => !visited.has(`${r},${c}`))
+  expect(unreachable, `${label} sem marcadores inalcançáveis`).toHaveLength(0)
+}
 
 describe('LevelLoader', () => {
   it('parseia grid: paredes, jogador, inimigos, pickups e cressets com luz embutida', () => {
@@ -89,44 +141,98 @@ describe('LevelLoader', () => {
 
   it('todos os níveis (campanha + secretos + ramificações) são conectados (flood-fill do spawn)', () => {
     for (const level of ALL_LEVELS) {
-      const grid = level.grid ?? []
-      const rows = grid.length
-      const cols = grid[0].length
-      let start: [number, number] | null = null
-      const markers: Array<[number, number]> = []
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const ch = grid[r][c]
-          if (ch === 'P') start = [r, c]
-          else if ('ESKTHADVCBNX'.includes(ch)) markers.push([r, c])
-        }
+      if (level.floors && level.floors.length > 0) {
+        // Multi-andar: conectividade por andar (o teste isolado não tem portas).
+        level.floors.forEach((floor, index) => {
+          checkGridConnectivity(
+            floor.grid,
+            `${level.id}/${floor.id}`,
+            floor.id === level.startFloorId || index === 0,
+          )
+        })
+      } else {
+        checkGridConnectivity(level.grid ?? [], level.id, true)
       }
-      expect(start, `nível ${level.id} tem spawn`).not.toBeNull()
-
-      const visited = new Set<string>()
-      const queue: Array<[number, number]> = [start!]
-      visited.add(start!.join(','))
-      while (queue.length > 0) {
-        const [r, c] = queue.shift()!
-        for (const [dr, dc] of [
-          [1, 0],
-          [-1, 0],
-          [0, 1],
-          [0, -1],
-        ]) {
-          const nr = r + dr
-          const nc = c + dc
-          if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue
-          if (grid[nr][nc] === '#') continue
-          const key = `${nr},${nc}`
-          if (visited.has(key)) continue
-          visited.add(key)
-          queue.push([nr, nc])
-        }
-      }
-      const unreachable = markers.filter(([r, c]) => !visited.has(`${r},${c}`))
-      expect(unreachable, `nível ${level.id} sem marcadores inalcançáveis`).toHaveLength(0)
     }
+  })
+
+  it('parseia nível multi-andar: paredes com floorId, spawn do andar inicial', () => {
+    const parsed = loader.parse({
+      id: 't',
+      name: 'T',
+      startFloorId: 'f2',
+      floors: [
+        { id: 'f1', name: 'Térreo', height: 0, grid: ['###', '#.#', '###'] },
+        { id: 'f2', name: 'Superior', height: 5, grid: ['###', '#P#', '###'] },
+      ],
+    })
+    expect(parsed.floors).toHaveLength(2)
+    expect(parsed.startFloorId).toBe('f2')
+    expect(parsed.floors![1].height).toBe(5)
+    // Paredes de ambos os andares carregam o floorId correto.
+    expect(parsed.walls.filter(w => w.floorId === 'f1')).toHaveLength(8)
+    expect(parsed.walls.filter(w => w.floorId === 'f2')).toHaveLength(8)
+    // Spawn vem do andar inicial (f2).
+    expect(parsed.playerSpawn.x).toBe(9)
+    expect(parsed.playerSpawn.z).toBe(9)
+  })
+
+  it('andar único com floors (um só andar) equivale ao legado', () => {
+    const multi = loader.parse({
+      id: 't',
+      name: 'T',
+      floors: [{ id: 'f1', height: 0, grid: ['###', '#P#', '###'] }],
+    })
+    const legacy = loader.parse({ id: 't', name: 'T', grid: ['###', '#P#', '###'] })
+    expect(multi.walls).toHaveLength(legacy.walls.length)
+    expect(multi.playerSpawn).toEqual(legacy.playerSpawn)
+    expect(multi.startFloorId).toBe('f1')
+  })
+
+  it('parseia escadas: entradas de ida e volta nos andares corretos', () => {
+    const parsed = loader.parse({
+      id: 't',
+      name: 'T',
+      startFloorId: 'f1',
+      floors: [
+        { id: 'f1', height: 0, grid: ['#####', '#P.L#', '#####'] },
+        { id: 'f2', height: 5, grid: ['#####', '#..l#', '#####'] },
+      ],
+      stairs: [
+        {
+          id: 's12',
+          fromFloor: 'f1',
+          toFloor: 'f2',
+          fromMarker: 'L1',
+          toMarker: 'l1',
+          direction: 'up',
+        },
+      ],
+    })
+    expect(parsed.stairs).toHaveLength(2)
+    const up = parsed.stairs.find(s => s.direction === 'up')!
+    const down = parsed.stairs.find(s => s.direction === 'down')!
+    expect(up.floorId).toBe('f1')
+    expect(up.targetFloorId).toBe('f2')
+    expect(down.floorId).toBe('f2')
+    expect(down.targetFloorId).toBe('f1')
+    // Posição no centro da célula: L e l em (1,3).
+    expect(up.x).toBe(3 * TILE_SIZE + TILE_SIZE / 2)
+    expect(up.targetX).toBe(3 * TILE_SIZE + TILE_SIZE / 2)
+    expect(down.x).toBe(up.targetX)
+    // Escadas distribuídas nos andares correspondentes.
+    expect(parsed.floors![0].stairs).toHaveLength(1)
+    expect(parsed.floors![1].stairs).toHaveLength(1)
+  })
+
+  it('nível de teste multi-andar: 2 andares, escada de ida e volta, spawn no térreo', () => {
+    const parsed = loader.parse(levelMultiFloorTest)
+    expect(parsed.floors).toHaveLength(2)
+    expect(parsed.startFloorId).toBe('floor-1')
+    expect(parsed.stairs).toHaveLength(2)
+    expect(parsed.stairs.filter(s => s.direction === 'up')[0].targetFloorId).toBe('floor-2')
+    expect(parsed.stairs.filter(s => s.direction === 'down')[0].targetFloorId).toBe('floor-1')
+    expect(parsed.playerSpawn.yaw).toBe(0)
   })
 
   it('parseia todos os níveis (campanha + secretos + ramificações) sem erro', () => {

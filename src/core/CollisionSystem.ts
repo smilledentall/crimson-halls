@@ -9,12 +9,16 @@ export interface WallAABB {
   maxX: number
   minZ: number
   maxZ: number
+  /** Andar a que a parede pertence (multi-andar). Ausente/'' = andar único. */
+  floorId?: string
 }
 
 const EPSILON = 0.001
 
 export class CollisionSystem {
   private walls: WallAABB[] = []
+  /** Andar ativo para colisão/LOS. '' = andar único (legado). */
+  private currentFloorId = ''
 
   setWalls(walls: WallAABB[]): void {
     this.walls = walls
@@ -24,9 +28,23 @@ export class CollisionSystem {
     return this.walls
   }
 
+  setCurrentFloor(floorId: string): void {
+    this.currentFloorId = floorId
+  }
+
+  getCurrentFloor(): string {
+    return this.currentFloorId
+  }
+
+  /** Paredes ativas do andar atual (todas se for andar único). */
+  private activeWalls(): WallAABB[] {
+    if (this.currentFloorId === '') return this.walls
+    return this.walls.filter(wall => (wall.floorId ?? '') === this.currentFloorId)
+  }
+
   /** Testa se um círculo em (x, z) com raio colide com alguma parede. */
   isBlocked(x: number, z: number, radius: number): boolean {
-    for (const wall of this.walls) {
+    for (const wall of this.activeWalls()) {
       if (this.circleIntersectsAABB(x, z, radius, wall)) return true
     }
     return false
@@ -36,7 +54,7 @@ export class CollisionSystem {
   hasClearLine(x0: number, z0: number, x1: number, z1: number): boolean {
     const dx = x1 - x0
     const dz = z1 - z0
-    for (const wall of this.walls) {
+    for (const wall of this.activeWalls()) {
       if (this.segmentIntersectsAABB(x0, z0, dx, dz, wall)) return false
     }
     return true
@@ -134,7 +152,7 @@ export class CollisionSystem {
     // Ponto de parada mais próximo: para movimento positivo, a menor face
     // "à frente" (face - raio); para negativo, a maior face "atrás" (face + raio).
     let stop = direction > 0 ? Infinity : -Infinity
-    for (const wall of this.walls) {
+    for (const wall of this.activeWalls()) {
       if (axis === 'x') {
         const nearFace = direction > 0 ? wall.minX : wall.maxX
         const inReach =
