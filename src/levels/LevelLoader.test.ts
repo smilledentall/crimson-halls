@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { LevelLoader, TILE_SIZE, computeDoorPlacement, resolveSpawnFloorId } from './LevelLoader'
 import { ALL_LEVELS } from './levels'
 import { levelMultiFloorTest } from './levels/level-multifloor-test'
+import { autoPairStairs } from './stairPairing'
 import { LIGHTING_CONFIG } from '../core/lighting.config'
 
 const loader = new LevelLoader()
@@ -262,6 +263,32 @@ describe('LevelLoader', () => {
     expect(parsed.enemySpawns).toHaveLength(2)
     expect(parsed.enemySpawns.filter(s => s.floorId === 'floor-1')).toHaveLength(1)
     expect(parsed.enemySpawns.filter(s => s.floorId === 'floor-2')).toHaveLength(1)
+  })
+
+  it('escadas geradas pelo editor (autoPairStairs) são consumidas pelo LevelLoader', () => {
+    const floors = [
+      { id: 'floor-1', name: 'Térreo', height: 0, grid: ['#P...L#', '######'] },
+      { id: 'floor-2', name: 'Topo', height: 5, grid: ['#...l.#', '######'] },
+    ]
+    const definition = {
+      id: 'editor-multi',
+      name: 'Editor Multi',
+      floors,
+      stairs: autoPairStairs(floors.map(f => ({ id: f.id, height: f.height, grid: f.grid }))),
+      startFloorId: 'floor-1',
+    }
+    const parsed = loader.parse(definition)
+    // Ida + volta: L no térreo (subir) e l no topo (descer).
+    expect(parsed.stairs).toHaveLength(2)
+    const up = parsed.stairs.find(s => s.direction === 'up')!
+    const down = parsed.stairs.find(s => s.direction === 'down')!
+    expect(up.floorId).toBe('floor-1')
+    expect(up.targetFloorId).toBe('floor-2')
+    expect(down.floorId).toBe('floor-2')
+    expect(down.targetFloorId).toBe('floor-1')
+    // Centro da célula do marcador: L em (0,5) → x = 5*6+3 = 33; l em (0,4) → 27.
+    expect(up.x).toBe(5 * TILE_SIZE + TILE_SIZE / 2)
+    expect(up.targetX).toBe(4 * TILE_SIZE + TILE_SIZE / 2)
   })
 
   it('parseia todos os níveis (campanha + secretos + ramificações) sem erro', () => {

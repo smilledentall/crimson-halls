@@ -11,6 +11,7 @@ import { LIGHTING_CONFIG } from './lighting.config'
 import { ParticleSystem } from './ParticleSystem'
 import { computeSplashDamage } from './splash'
 import { findSpawnPosition } from './spawnPosition'
+import { canDebugFloorSwitch } from './debugFloor'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
@@ -1373,13 +1374,16 @@ export class Engine {
     useGameStore.getState().setFlashlightState(this.flashlightEnabled)
   }
 
-  /** Tecla F (edge trigger): troca de andar no modo multi-andar (teste). */
+  /** Tecla F (edge trigger): troca de andar APENAS no nível isolado de teste
+   *  multi-andar (ver `canDebugFloorSwitch`). Nunca age em níveis normais —
+   *  campanha de andar único ou níveis customizados — evitando chamar
+   *  `setCurrentFloor()` para um andar que não existe no nível atual. */
   private handleDebugFloorKey(): void {
     const pressed = this.input?.isKeyDown('KeyF') ?? false
     if (pressed && !this.debugFloorKeyHeld) {
       const parsed = this.currentParsed
       const floors = parsed?.floors
-      if (floors && floors.length > 1) {
+      if (floors && canDebugFloorSwitch(this.currentLevelId, floors.length)) {
         const current = this.collision.getCurrentFloor()
         const next = floors.find(floor => floor.id !== current) ?? floors[0]
         this.collision.setCurrentFloor(next.id)

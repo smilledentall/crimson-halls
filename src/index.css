@@ -978,6 +978,82 @@ body {
   border: 1px solid #3a2025;
 }
 
+/* ---------- Editor: abas e campos de andares ---------- */
+
+.editor-floor-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.editor-floor-tab {
+  padding: 6px 12px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #c98f96;
+  background: rgba(20, 8, 9, 0.9);
+  border: 1px solid #3a2025;
+  cursor: pointer;
+}
+
+.editor-floor-tab.active {
+  background: rgba(79, 195, 255, 0.25);
+  border-color: #4fc3ff;
+  color: #e8f6ff;
+}
+
+.editor-floor-add {
+  font-weight: 700;
+}
+
+.editor-floor-remove {
+  color: #e8848c;
+}
+
+.editor-floor-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+/* ---------- Editor: lista de escadas ---------- */
+
+.editor-stair-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #2a3a4a;
+  background: rgba(20, 30, 46, 0.4);
+}
+
+.editor-stair-title {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #4fc3ff;
+}
+
+.editor-stair-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #e8c9cd;
+}
+
+.editor-stair-row .menu-button {
+  min-width: auto;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #e8848c;
+}
+
 /* ---------- Banner de setor limpo / porta trancada ---------- */
 
 .sector-clear-banner {
