@@ -71,4 +71,52 @@ describe('CollisionSystem', () => {
     expect(system.hasClearLine(3, 3, 15, 5)).toBe(false) // atravessa parede X
     expect(system.hasClearLine(3, 3, 5, 15)).toBe(false) // atravessa parede Z
   })
+
+  describe('multi-andar (floorId)', () => {
+    const FLOOR_1: WallAABB = { minX: 10, maxX: 12, minZ: 0, maxZ: 20, floorId: 'f1' }
+    const FLOOR_2: WallAABB = { minX: 14, maxX: 16, minZ: 0, maxZ: 20, floorId: 'f2' }
+
+    function makeFloors(): CollisionSystem {
+      const system = new CollisionSystem()
+      system.setWalls([FLOOR_1, FLOOR_2])
+      return system
+    }
+
+    it('isBlocked usa o andar ativo (setCurrentFloor)', () => {
+      const system = makeFloors()
+      system.setCurrentFloor('f1')
+      expect(system.isBlocked(11, 5, 0.35)).toBe(true)
+      expect(system.isBlocked(15, 5, 0.35)).toBe(false)
+      system.setCurrentFloor('f2')
+      expect(system.isBlocked(11, 5, 0.35)).toBe(false)
+      expect(system.isBlocked(15, 5, 0.35)).toBe(true)
+    })
+
+    it('isBlocked aceita floorId explícito (independente do andar ativo)', () => {
+      const system = makeFloors()
+      system.setCurrentFloor('f2')
+      expect(system.isBlocked(11, 5, 0.35, 'f1')).toBe(true)
+      expect(system.isBlocked(15, 5, 0.35, 'f1')).toBe(false)
+      expect(system.isBlocked(11, 5, 0.35, 'f2')).toBe(false)
+    })
+
+    it('hasClearLine usa floorId explícito', () => {
+      const system = makeFloors()
+      // Parede da f1 bloqueia o segmento em f1; em f2 o mesmo segmento é livre.
+      expect(system.hasClearLine(3, 5, 13, 5, 'f1')).toBe(false)
+      expect(system.hasClearLine(3, 5, 13, 5, 'f2')).toBe(true)
+    })
+
+    it('resolvePosition desliza nas paredes do floorId informado', () => {
+      const system = makeFloors()
+      // Andando +X em z=5: em f1 para na face da parede f1 (x=10).
+      let pos = { x: 5, z: 5 }
+      for (let i = 0; i < 100; i++) pos = system.resolvePosition(pos, { x: 0.3, z: 0 }, 0.35, 'f1')
+      expect(Math.abs(pos.x - (10 - 0.35 - 0.001))).toBeLessThan(0.01)
+      // Em f2 a mesma caminhada para na parede de f2 (x=14), não na de f1.
+      let pos2 = { x: 5, z: 5 }
+      for (let i = 0; i < 100; i++) pos2 = system.resolvePosition(pos2, { x: 0.3, z: 0 }, 0.35, 'f2')
+      expect(Math.abs(pos2.x - (14 - 0.35 - 0.001))).toBeLessThan(0.01)
+    })
+  })
 })

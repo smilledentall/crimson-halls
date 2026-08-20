@@ -28,6 +28,8 @@ export interface GameStore {
   settingsReturnPhase: GamePhase
   levelId: string
   levelName: string
+  /** Andar atual do jogador (multi-andar). '' = andar único (legado). */
+  floorId: string
   health: number
   kills: number
   currentWeaponId: WeaponId
@@ -215,6 +217,7 @@ export const useGameStore = create<GameStore>(set => {
     settingsReturnPhase: 'menu',
     levelId: 'level-1',
     levelName: LEVELS_BY_ID['level-1'].name,
+    floorId: '',
     health: PLAYER_CONFIG.maxHealth,
     kills: 0,
     currentWeaponId: 'pistol',
@@ -347,6 +350,7 @@ export const useGameStore = create<GameStore>(set => {
         phase: 'playing',
         levelId: 'level-1',
         levelName: LEVELS_BY_ID['level-1'].name,
+        floorId: '',
         health: PLAYER_CONFIG.maxHealth,
         kills: 0,
         currentWeaponId: 'pistol',
@@ -372,6 +376,7 @@ export const useGameStore = create<GameStore>(set => {
         phase: 'playing',
         levelId: save.levelId,
         levelName: level.name,
+        floorId: save.floorId ?? '',
         health: save.health,
         kills: save.kills,
         ammo: { ...initialAmmo(upgrades), ...save.ammo },
@@ -402,6 +407,7 @@ export const useGameStore = create<GameStore>(set => {
         if (state.customLevel) return { phase: 'victory' }
         saveGame({
           levelId: state.levelId,
+          floorId: state.floorId,
           health: maxHealthFor(state.skillUpgrades),
           ammo: state.ammo,
           kills: state.kills,
@@ -439,6 +445,7 @@ export const useGameStore = create<GameStore>(set => {
         // Checkpoint: sai por uma porta → salva o estado no novo nível.
         saveGame({
           levelId: targetLevelId,
+          floorId: state.floorId,
           health: state.health,
           ammo: state.ammo,
           kills: state.kills,

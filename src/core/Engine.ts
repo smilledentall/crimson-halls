@@ -26,12 +26,13 @@ import { Player } from '../entities/Player'
 import { PLAYER_CONFIG } from '../entities/player.config'
 import { Projectile } from '../entities/Projectile'
 import { Rocket } from '../entities/Rocket'
-import { LevelLoader, WALL_HEIGHT } from '../levels/LevelLoader'
+import { LevelLoader, resolveSpawnFloorId, WALL_HEIGHT } from '../levels/LevelLoader'
 import { getLevelTextures } from './LevelTextureLoader'
 import type { ParsedLevel, ParsedStair, WaveDefinition } from '../levels/LevelLoader'
 import { LEVELS_BY_ID, VICTORY_LEVEL_ID } from '../levels/levels'
 import { useGameStore, maxHealthFor } from '../state/gameStore'
 import type { GamePhase } from '../state/gameStore'
+import { loadGame } from '../state/saveSystem'
 import { DIFFICULTIES } from '../state/difficulty.config'
 import {
   CURRENCY_PER_LEVEL_CLEAR,
@@ -459,11 +460,13 @@ export class Engine {
           mesh => (mesh.userData.floorId ?? '') === floor,
         )
         for (const enemy of this.enemies) {
-          if (enemy.alive) targets.push(enemy.hitMesh)
+          // Multi-andar: raycast ignora inimigos de outros andares.
+          if (enemy.alive && (enemy.floorId ?? '') === floor) targets.push(enemy.hitMesh)
         }
         return targets
       },
       getEnemies: () => this.enemies,
+      getPlayerFloor: () => this.collision.getCurrentFloor(),
       getAmmo: id => useGameStore.getState().ammo[id],
       spendAmmo: (id, amount) => useGameStore.getState().spendAmmo(id, amount),
       onEnemyHit: (enemy, damage) => {
@@ -476,7 +479,12 @@ export class Engine {
         this.spawnWallImpactParticles(point, normal)
       },
       spawnRocket: (origin, direction, speed) => {
-        const rocket = new Rocket({ origin, direction, speed })
+        const rocket = new Rocket({
+          origin,
+          direction,
+          speed,
+          floorId: this.collision.getCurrentFloor(),
+        })
         this.rockets.push(rocket)
         this.scene?.add(rocket.mesh)
         this.audio.play('rocket')
@@ -774,26 +782,35 @@ export class Engine {
     if (!this.player) return
     const world: EnemyWorld = {
       playerPosition: this.player.position,
+      playerFloorId: this.collision.getCurrentFloor(),
       collision: this.collision,
       damagePlayer: amount => {
         useGameStore.getState().damage(amount)
         this.audio.play('player_hurt')
         this.addShake(0.25)
       },
-      fireProjectile: (origin, target, damage) => {
-        const projectile = new Projectile({ origin, target, speed: 12, damage })
+      fireProjectile: (origin, target, damage, floorId) => {
+        const projectile = new Projectile({ origin, target, speed: 12, damage, floorId })
         this.projectiles.push(projectile)
         this.scene?.add(projectile.mesh)
         this.audio.playPositional('enemy_shoot', origin)
       },
-      explode: (position, radius, damage) => {
-        this.explodeAt(position, radius, damage)
+      explode: (position, radius, damage, floorId) => {
+        this.explodeAt(position, radius, damage, floorId)
       },
-      summon: (enemyType, origin) => {
+      summon: (enemyType, origin, floorId) => {
         if (this.activeSummons >= 6) return
         const type = ENEMY_TYPES.find(t => t.id === enemyType) ?? ENEMY_TYPES[0]
         const healthMult = DIFFICULTIES[useGameStore.getState().difficulty].enemyHealth
-        const enemy = createEnemy(type, origin.x, origin.z, healthMult, this.enemyCombatModifiers())
+        const enemy = createEnemy(
+          type,
+          origin.x,
+          origin.z,
+          healthMult,
+          this.enemyCombatModifiers(),
+          floorId,
+        )
+        enemy.setFloorHeight(this.floorHeightFor(floorId))
         this.enemies.push(enemy)
         this.scene?.add(enemy.mesh)
         this.activeSummons++
@@ -830,6 +847,7 @@ export class Engine {
             enemy.position.clone(),
             enemy.type.explosionRadius ?? 3,
             enemy.type.explosionDamage ?? 25,
+            enemy.floorId,
           )
         }
       }
@@ -942,9 +960,12 @@ export class Engine {
     const point = parsed.waveSpawns[Math.floor(Math.random() * parsed.waveSpawns.length)]
     if (!point) return
     const type = ENEMY_TYPES.find(t => t.id === enemyType) ?? ENEMY_TYPES[0]
-    const pos = this.findEnemySpawnPosition(point.x, point.z, type.radius)
+    // Ondas nascem no andar em que o jogador está quando o gatilho dispara.
+    const floorId = this.collision.getCurrentFloor()
+    const pos = this.findEnemySpawnPosition(point.x, point.z, type.radius, floorId)
     const healthMult = DIFFICULTIES[useGameStore.getState().difficulty].enemyHealth
-    const enemy = createEnemy(type, pos.x, pos.z, healthMult, this.enemyCombatModifiers())
+    const enemy = createEnemy(type, pos.x, pos.z, healthMult, this.enemyCombatModifiers(), floorId)
+    enemy.setFloorHeight(this.floorHeightFor(floorId))
     this.enemies.push(enemy)
     this.scene.add(enemy.mesh)
     this.spawnedEnemyCount++
@@ -960,13 +981,20 @@ export class Engine {
     baseX: number,
     baseZ: number,
     radius: number,
+    floorId?: string,
   ): { x: number; z: number } {
     const occupants = this.enemies.map(other => ({
       x: other.position.x,
       z: other.position.z,
       radius: other.type.radius,
     }))
-    return findSpawnPosition(baseX, baseZ, radius, this.collision, occupants)
+    return findSpawnPosition(baseX, baseZ, radius, this.collision, occupants, 24, floorId)
+  }
+
+  /** Altura (Y) do chão do andar de uma entidade (0 no andar único). */
+  private floorHeightFor(floorId?: string, parsed?: ParsedLevel): number {
+    const source = parsed ?? this.currentParsed
+    return source?.floors?.find(floor => floor.id === floorId)?.height ?? 0
   }
 
   /** Atualiza os foguetes do lançador: movimento + colisão + explosão. */
@@ -977,10 +1005,12 @@ export class Engine {
       rocket.update(dt)
       const pos = rocket.mesh.position
       let exploded = !rocket.alive
-      if (!exploded && this.collision.isBlocked(pos.x, pos.z, 0.2)) exploded = true
+      if (!exploded && this.collision.isBlocked(pos.x, pos.z, 0.2, rocket.floorId)) exploded = true
       if (!exploded) {
         for (const enemy of this.enemies) {
           if (!enemy.alive) continue
+          // Multi-andar: o foguete só atinge inimigos do seu próprio andar.
+          if (enemy.floorId !== rocket.floorId) continue
           if (Math.hypot(enemy.position.x - pos.x, enemy.position.z - pos.z) < 1.1) {
             exploded = true
             break
@@ -991,7 +1021,7 @@ export class Engine {
         const weapon = this.weapons['rocket']
         const radius = weapon?.definition.splashRadius ?? 4.5
         const damage = weapon?.definition.damage ?? 60
-        this.explodeAt(pos, radius, damage)
+        this.explodeAt(pos, radius, damage, rocket.floorId)
         this.scene?.remove(rocket.mesh)
         rocket.dispose()
         this.rockets.splice(i, 1)
@@ -1000,19 +1030,26 @@ export class Engine {
   }
 
   /** Explosão em área (foguete ou kamikaze): dano em inimigos + jogador + partículas. */
-  private explodeAt(position: THREE.Vector3, radius: number, damage: number): void {
+  private explodeAt(
+    position: THREE.Vector3,
+    radius: number,
+    damage: number,
+    floorId?: string,
+  ): void {
     this.particles?.explosion(position, radius > 4 ? 1.6 : 1)
     this.audio.playPositional('explosion', position)
     this.addEffectLight(position, 0xff9f43, 40, 0.35)
     this.addShake(0.55)
-    // dano nos inimigos
+    const effectiveFloor = floorId ?? this.collision.getCurrentFloor()
+    // dano nos inimigos (apenas do andar da explosão)
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue
+      if ((enemy.floorId ?? '') !== effectiveFloor) continue
       const dist = Math.hypot(enemy.position.x - position.x, enemy.position.z - position.z)
       enemy.damage(computeSplashDamage(dist, radius, damage))
     }
-    // dano no jogador (self-splash)
-    if (this.player) {
+    // dano no jogador (self-splash) — só se estiver no andar da explosão
+    if (this.player && effectiveFloor === this.collision.getCurrentFloor()) {
       const dist = Math.hypot(
         this.player.position.x - position.x,
         this.player.position.z - position.z,
@@ -1032,7 +1069,12 @@ export class Engine {
       const projectile = this.projectiles[i]
       projectile.update(dt, this.collision)
 
-      if (projectile.alive && projectile.mesh.position.distanceTo(this.player.position) < 0.5) {
+      // Multi-andar: o projétil só atinge o jogador no mesmo andar.
+      if (
+        projectile.alive &&
+        this.collision.getCurrentFloor() === projectile.floorId &&
+        projectile.mesh.position.distanceTo(this.player.position) < 0.5
+      ) {
         useGameStore.getState().damage(projectile.damage)
         this.audio.play('player_hurt')
         this.addShake(0.25)
@@ -1054,6 +1096,8 @@ export class Engine {
       pickup.update(dt)
 
       if (!pickup.collected) {
+        // Multi-andar: só coleta pickup do andar atual do jogador.
+        if ((pickup.definition.floorId ?? '') !== this.collision.getCurrentFloor()) continue
         const dx = pickup.mesh.position.x - this.player.position.x
         const dz = pickup.mesh.position.z - this.player.position.z
         if (Math.hypot(dx, dz) <= PICKUP_CONFIG.collectRadius) {
@@ -1202,8 +1246,9 @@ export class Engine {
       )
     }
 
-    // Pickups não coletados.
+    // Pickups não coletados (somente do andar atual).
     for (const pickup of this.pickups) {
+      if ((pickup.definition.floorId ?? '') !== floor) continue
       ctx.fillStyle =
         pickup.definition.kind === 'health'
           ? '#2ee07a'
@@ -1254,10 +1299,11 @@ export class Engine {
       ctx.fill()
     }
 
-    // Inimigos vivos.
+    // Inimigos vivos (somente do andar atual).
     ctx.fillStyle = '#e2364a'
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue
+      if ((enemy.floorId ?? '') !== floor) continue
       ctx.beginPath()
       ctx.arc(ox + enemy.position.x * scale, oz + enemy.position.z * scale, 2.6, 0, Math.PI * 2)
       ctx.fill()
@@ -1337,6 +1383,7 @@ export class Engine {
         const current = this.collision.getCurrentFloor()
         const next = floors.find(floor => floor.id !== current) ?? floors[0]
         this.collision.setCurrentFloor(next.id)
+        useGameStore.setState({ floorId: next.id })
         if (this.player) {
           this.player.position.y = next.height + PLAYER_CONFIG.eyeHeight
         }
@@ -1474,6 +1521,7 @@ export class Engine {
     if (!floor) return
     this.collision.setCurrentFloor(stair.targetFloorId)
     this.player.position.set(stair.targetX, floor.height + PLAYER_CONFIG.eyeHeight, stair.targetZ)
+    useGameStore.setState({ floorId: stair.targetFloorId })
     this.audio.play('door')
     useGameStore.getState().setInteractableStair(null)
     console.log(`[stair] ${stair.id}: ${stair.floorId} -> ${stair.targetFloorId}`)
@@ -1637,7 +1685,13 @@ export class Engine {
 
     this.clearLevel()
     this.collision.setWalls(parsed.walls)
-    this.collision.setCurrentFloor(parsed.startFloorId ?? '')
+    // Checkpoint (§7): o andar de spawn vem do save (fallback em cascata
+    // salvo → startFloorId → floor com 'P' → floors[0]). Nível customizado do
+    // editor e níveis legados não têm save multi-andar → andar padrão/''.
+    const savedFloorId = custom ? undefined : loadGame()?.floorId
+    const spawnFloorId = resolveSpawnFloorId(definition, savedFloorId)
+    this.collision.setCurrentFloor(spawnFloorId)
+    useGameStore.setState({ floorId: spawnFloorId })
 
     // Reaproveita a malha estática (paredes/chão/teto) já gerada para este nível.
     const groupKey = definition.id
@@ -1717,15 +1771,17 @@ export class Engine {
             : markerType
       const dupCount = type.id === 'boss' ? 1 : enemyMult
       for (let dup = 0; dup < dupCount; dup++) {
-        const pos = this.findEnemySpawnPosition(spawn.x, spawn.z, type.radius)
+        const pos = this.findEnemySpawnPosition(spawn.x, spawn.z, type.radius, spawn.floorId)
         const enemy = createEnemy(
           type,
           pos.x,
           pos.z,
           enemyHealthMult,
           this.enemyCombatModifiers(),
+          spawn.floorId,
         )
         enemy.spawnId = spawnId
+        enemy.setFloorHeight(this.floorHeightFor(spawn.floorId, parsed))
         this.enemies.push(enemy)
         this.scene.add(enemy.mesh)
         this.spawnedEnemyCount++
@@ -1850,7 +1906,12 @@ export class Engine {
         `portas=${parsed.doors.length}, válvulas=${parsed.levers.length}, notas=${parsed.notes.length}`,
     )
 
-    this.player.spawn(parsed.playerSpawn)
+    // Spawn no marcador 'P' do andar de spawn (fallback: P do andar inicial),
+    // na altura daquele andar — senão o jogador nasceria "no ar" ao continuar
+    // um checkpoint de andar elevado.
+    const spawnFloor = parsed.floors?.find(floor => floor.id === spawnFloorId)
+    this.player.spawn(spawnFloor?.playerSpawn ?? parsed.playerSpawn)
+    this.player.position.y = (spawnFloor?.height ?? 0) + PLAYER_CONFIG.eyeHeight
     this.currentParsed = parsed
     this.currentLevelId = levelId
 

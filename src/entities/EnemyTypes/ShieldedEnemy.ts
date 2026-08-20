@@ -25,8 +25,9 @@ export class ShieldedEnemy extends Enemy {
     z: number,
     healthMultiplier = 1,
     combat: CombatModifiers = {},
+    floorId = '',
   ) {
-    super(type, x, z, healthMultiplier, combat)
+    super(type, x, z, healthMultiplier, combat, floorId)
     this.maxShieldHealth = Math.max(1, Math.round((type.shield ?? type.health) * 0.5))
     this.shieldHealth = this.maxShieldHealth
     this.buildShield()

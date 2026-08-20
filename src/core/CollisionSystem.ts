@@ -37,24 +37,25 @@ export class CollisionSystem {
   }
 
   /** Paredes ativas do andar atual (todas se for andar único). */
-  private activeWalls(): WallAABB[] {
-    if (this.currentFloorId === '') return this.walls
-    return this.walls.filter(wall => (wall.floorId ?? '') === this.currentFloorId)
+  private activeWalls(floorId?: string): WallAABB[] {
+    const floor = floorId ?? this.currentFloorId
+    if (floor === '') return this.walls
+    return this.walls.filter(wall => (wall.floorId ?? '') === floor)
   }
 
   /** Testa se um círculo em (x, z) com raio colide com alguma parede. */
-  isBlocked(x: number, z: number, radius: number): boolean {
-    for (const wall of this.activeWalls()) {
+  isBlocked(x: number, z: number, radius: number, floorId?: string): boolean {
+    for (const wall of this.activeWalls(floorId)) {
       if (this.circleIntersectsAABB(x, z, radius, wall)) return true
     }
     return false
   }
 
   /** True se o segmento (x0,z0)-(x1,z1) não atravessa nenhuma parede. */
-  hasClearLine(x0: number, z0: number, x1: number, z1: number): boolean {
+  hasClearLine(x0: number, z0: number, x1: number, z1: number, floorId?: string): boolean {
     const dx = x1 - x0
     const dz = z1 - z0
-    for (const wall of this.activeWalls()) {
+    for (const wall of this.activeWalls(floorId)) {
       if (this.segmentIntersectsAABB(x0, z0, dx, dz, wall)) return false
     }
     return true
@@ -112,29 +113,30 @@ export class CollisionSystem {
     pos: { x: number; z: number },
     delta: { x: number; z: number },
     radius: number,
+    floorId?: string,
   ): { x: number; z: number } {
     // Eixo X: `from` é a coordenada X, `fixed` é a Z.
     const candidateX = pos.x + delta.x
-    const blockedX = delta.x !== 0 && this.isBlocked(candidateX, pos.z, radius)
+    const blockedX = delta.x !== 0 && this.isBlocked(candidateX, pos.z, radius, floorId)
     const x = blockedX
-      ? this.clampAgainstWalls(pos.x, pos.z, 'x', Math.sign(delta.x), radius, Math.abs(delta.x))
+      ? this.clampAgainstWalls(pos.x, pos.z, 'x', Math.sign(delta.x), radius, Math.abs(delta.x), floorId)
       : candidateX
 
     // Eixo Z: `from` é a coordenada Z, `fixed` é a X já resolvida.
     const candidateZ = pos.z + delta.z
-    const blockedZ = delta.z !== 0 && this.isBlocked(x, candidateZ, radius)
+    const blockedZ = delta.z !== 0 && this.isBlocked(x, candidateZ, radius, floorId)
     const z = blockedZ
-      ? this.clampAgainstWalls(pos.z, x, 'z', Math.sign(delta.z), radius, Math.abs(delta.z))
+      ? this.clampAgainstWalls(pos.z, x, 'z', Math.sign(delta.z), radius, Math.abs(delta.z), floorId)
       : candidateZ
 
     // Rede de segurança: se a diagonal ficou dentro de uma parede (ex.: corte
     // de quina), reverte os eixos — o jogador nunca atravessa para o outro lado.
-    if (this.isBlocked(x, z, radius)) {
+    if (this.isBlocked(x, z, radius, floorId)) {
       let safeX = x
       let safeZ = z
-      if (this.isBlocked(x, pos.z, radius)) safeX = pos.x
-      if (this.isBlocked(pos.x, z, radius)) safeZ = pos.z
-      if (this.isBlocked(safeX, safeZ, radius)) return { x: pos.x, z: pos.z }
+      if (this.isBlocked(x, pos.z, radius, floorId)) safeX = pos.x
+      if (this.isBlocked(pos.x, z, radius, floorId)) safeZ = pos.z
+      if (this.isBlocked(safeX, safeZ, radius, floorId)) return { x: pos.x, z: pos.z }
       return { x: safeX, z: safeZ }
     }
 
@@ -148,11 +150,12 @@ export class CollisionSystem {
     direction: number,
     radius: number,
     travel: number,
+    floorId?: string,
   ): number {
     // Ponto de parada mais próximo: para movimento positivo, a menor face
     // "à frente" (face - raio); para negativo, a maior face "atrás" (face + raio).
     let stop = direction > 0 ? Infinity : -Infinity
-    for (const wall of this.activeWalls()) {
+    for (const wall of this.activeWalls(floorId)) {
       if (axis === 'x') {
         const nearFace = direction > 0 ? wall.minX : wall.maxX
         const inReach =

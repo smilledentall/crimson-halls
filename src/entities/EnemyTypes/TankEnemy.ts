@@ -15,8 +15,9 @@ export class TankEnemy extends Enemy {
     z: number,
     healthMultiplier = 1,
     combat: CombatModifiers = {},
+    floorId = '',
   ) {
-    super(type, x, z, healthMultiplier, combat)
+    super(type, x, z, healthMultiplier, combat, floorId)
   }
 
   protected buildSilhouette(scale: number): void {

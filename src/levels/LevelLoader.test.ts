@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LevelLoader, TILE_SIZE, computeDoorPlacement } from './LevelLoader'
+import { LevelLoader, TILE_SIZE, computeDoorPlacement, resolveSpawnFloorId } from './LevelLoader'
 import { ALL_LEVELS } from './levels'
 import { levelMultiFloorTest } from './levels/level-multifloor-test'
 import { LIGHTING_CONFIG } from '../core/lighting.config'
@@ -225,6 +225,31 @@ describe('LevelLoader', () => {
     expect(parsed.floors![1].stairs).toHaveLength(1)
   })
 
+  it('parseia pickups multi-andar com floorId e floorY (H/A/C)', () => {
+    const parsed = loader.parse({
+      id: 't',
+      name: 'T',
+      floors: [
+        { id: 'f1', height: 0, grid: ['#####', '#H.A#', '#####'] },
+        { id: 'f2', height: 5, grid: ['#####', '#.C.#', '#####'] },
+      ],
+    })
+    expect(parsed.pickups).toHaveLength(3)
+    const health = parsed.pickups.find(p => p.kind === 'health')!
+    const ammo = parsed.pickups.find(p => p.kind === 'ammo')!
+    const currency = parsed.pickups.find(p => p.kind === 'currency')!
+    expect(health.floorId).toBe('f1')
+    expect(health.floorY).toBe(0)
+    expect(ammo.floorId).toBe('f1')
+    expect(ammo.floorY).toBe(0)
+    expect(currency.floorId).toBe('f2')
+    expect(currency.floorY).toBe(5)
+    // Centro da célula: H em (1,1), A em (1,3) no térreo; C em (1,2) no 2º.
+    expect(health.x).toBe(TILE_SIZE + TILE_SIZE / 2)
+    expect(ammo.x).toBe(3 * TILE_SIZE + TILE_SIZE / 2)
+    expect(currency.x).toBe(2 * TILE_SIZE + TILE_SIZE / 2)
+  })
+
   it('nível de teste multi-andar: 2 andares, escada de ida e volta, spawn no térreo', () => {
     const parsed = loader.parse(levelMultiFloorTest)
     expect(parsed.floors).toHaveLength(2)
@@ -233,6 +258,10 @@ describe('LevelLoader', () => {
     expect(parsed.stairs.filter(s => s.direction === 'up')[0].targetFloorId).toBe('floor-2')
     expect(parsed.stairs.filter(s => s.direction === 'down')[0].targetFloorId).toBe('floor-1')
     expect(parsed.playerSpawn.yaw).toBe(0)
+    // TESTE TEMPORÁRIO (§8): um inimigo por andar, cada um com o floorId certo.
+    expect(parsed.enemySpawns).toHaveLength(2)
+    expect(parsed.enemySpawns.filter(s => s.floorId === 'floor-1')).toHaveLength(1)
+    expect(parsed.enemySpawns.filter(s => s.floorId === 'floor-2')).toHaveLength(1)
   })
 
   it('parseia todos os níveis (campanha + secretos + ramificações) sem erro', () => {
@@ -458,5 +487,55 @@ describe('computeDoorPlacement — regra sistemática de posicionamento de porta
     expect(res.rotationY).toBeCloseTo(Math.PI)
     expect(res.x).toBeCloseTo(6 * T + T/2)
     expect(res.z).toBeCloseTo(1 * T + T - off)
+  })
+})
+
+describe('resolveSpawnFloorId (§7 fallback em cascata)', () => {
+  const def = {
+    id: 't',
+    name: 'T',
+    startFloorId: 'f1',
+    floors: [
+      { id: 'f1', height: 0, grid: ['###', '#P#', '###'] },
+      { id: 'f2', height: 5, grid: ['###', '#.#', '###'] },
+    ],
+  }
+
+  it('usa o floorId salvo quando ele existe no nível', () => {
+    expect(resolveSpawnFloorId(def, 'f2')).toBe('f2')
+    expect(resolveSpawnFloorId(def, 'f1')).toBe('f1')
+  })
+
+  it('floorId salvo inválido cai para startFloorId', () => {
+    expect(resolveSpawnFloorId(def, 'floor-99')).toBe('f1')
+  })
+
+  it('sem floorId salvo usa startFloorId', () => {
+    expect(resolveSpawnFloorId(def)).toBe('f1')
+    expect(resolveSpawnFloorId(def, undefined)).toBe('f1')
+  })
+
+  it('startFloorId ausente cai para o andar com marcador P', () => {
+    expect(resolveSpawnFloorId({ ...def, startFloorId: undefined })).toBe('f1')
+  })
+
+  it('sem P em nenhum andar cai para floors[0]', () => {
+    const noP = {
+      ...def,
+      startFloorId: undefined,
+      floors: [
+        { id: 'a', height: 0, grid: ['###', '#.#', '###'] },
+        { id: 'b', height: 5, grid: ['###', '#.#', '###'] },
+      ],
+    }
+    expect(resolveSpawnFloorId(noP)).toBe('a')
+  })
+
+  it('startFloorId inválido cai para o andar com P', () => {
+    expect(resolveSpawnFloorId({ ...def, startFloorId: 'nao-existe' })).toBe('f1')
+  })
+
+  it('nível legado (sem floors) retorna andar único ""', () => {
+    expect(resolveSpawnFloorId({ id: 't', name: 'T', grid: ['###', '#P#', '###'] }, 'f1')).toBe('')
   })
 })

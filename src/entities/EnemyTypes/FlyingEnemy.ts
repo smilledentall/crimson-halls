@@ -24,8 +24,9 @@ export class FlyingEnemy extends RangedEnemy {
     z: number,
     healthMultiplier = 1,
     combat: CombatModifiers = {},
+    floorId = '',
   ) {
-    super(type, x, z, healthMultiplier, combat)
+    super(type, x, z, healthMultiplier, combat, floorId)
   }
 
   /** Sobrescreve update para adicionar a flutuação no ar (sem alterar a IA). */
@@ -33,7 +34,8 @@ export class FlyingEnemy extends RangedEnemy {
     super.update(dt, world)
     if (!this.alive) return
     this.hoverPhase += dt * this.hoverSpeed
-    // Balanço senoidal; a morte (super.update) cuida do afundamento.
-    this.mesh.position.y = this.hoverHeight + Math.sin(this.hoverPhase) * this.hoverAmplitude
+    // Balanço senoidal sobre o chão DO SEU ANDAR; a morte (super.update) cuida
+    // do afundamento a partir do mesmo piso.
+    this.mesh.position.y = this.floorY + this.hoverHeight + Math.sin(this.hoverPhase) * this.hoverAmplitude
   }
 }

@@ -40,8 +40,9 @@ export class SwarmEnemy extends Enemy {
     z: number,
     healthMultiplier = 1,
     combat: CombatModifiers = {},
+    floorId = '',
   ) {
-    super(type, x, z, healthMultiplier, combat)
+    super(type, x, z, healthMultiplier, combat, floorId)
     // Swarm enemies are slightly faster and have a smaller health pool.
     this.speedMultiplier *= 1.2
     this.health = Math.max(1, Math.round(this.health * 0.8))

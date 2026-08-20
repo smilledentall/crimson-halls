@@ -213,13 +213,14 @@ export function createEnemy(
   z: number,
   healthMultiplier = 1,
   combat: CombatModifiers = {},
+  floorId = '',
 ): Enemy {
-  if (type.id === 'boss') return new BossEnemy(type, x, z, healthMultiplier, combat)
-  if (type.id === 'kamikaze') return new KamikazeEnemy(type, x, z, healthMultiplier, combat)
-  if (type.id === 'tank') return new TankEnemy(type, x, z, healthMultiplier, combat)
-  if (type.id === 'swarm') return new SwarmEnemy(type, x, z, healthMultiplier, combat)
-  if (type.id === 'shielded') return new ShieldedEnemy(type, x, z, healthMultiplier, combat)
-  if (type.id === 'flying') return new FlyingEnemy(type, x, z, healthMultiplier, combat)
-  if (type.ranged) return new RangedEnemy(type, x, z, healthMultiplier, combat)
-  return new Enemy(type, x, z, healthMultiplier, combat)
+  if (type.id === 'boss') return new BossEnemy(type, x, z, healthMultiplier, combat, floorId)
+  if (type.id === 'kamikaze') return new KamikazeEnemy(type, x, z, healthMultiplier, combat, floorId)
+  if (type.id === 'tank') return new TankEnemy(type, x, z, healthMultiplier, combat, floorId)
+  if (type.id === 'swarm') return new SwarmEnemy(type, x, z, healthMultiplier, combat, floorId)
+  if (type.id === 'shielded') return new ShieldedEnemy(type, x, z, healthMultiplier, combat, floorId)
+  if (type.id === 'flying') return new FlyingEnemy(type, x, z, healthMultiplier, combat, floorId)
+  if (type.ranged) return new RangedEnemy(type, x, z, healthMultiplier, combat, floorId)
+  return new Enemy(type, x, z, healthMultiplier, combat, floorId)
 }

@@ -6,6 +6,8 @@ export interface ProjectileConfig {
   target: THREE.Vector3
   speed: number
   damage: number
+  /** Andar a que o projétil pertence (multi-andar). '' = andar único. */
+  floorId?: string
 }
 
 const RADIUS = 0.15
@@ -23,6 +25,8 @@ export class Projectile {
   readonly mesh: THREE.Mesh
   readonly velocity = new THREE.Vector3()
   readonly damage: number
+  /** Andar a que o projétil pertence — colide só com paredes desse andar. */
+  readonly floorId: string
   alive = true
 
   private lifetime = MAX_LIFETIME
@@ -30,6 +34,7 @@ export class Projectile {
 
   constructor(config: ProjectileConfig) {
     this.damage = config.damage
+    this.floorId = config.floorId ?? ''
 
     const material = new THREE.MeshBasicMaterial({
       color: 0xff5533,
@@ -57,7 +62,7 @@ export class Projectile {
       this.alive = false
       return
     }
-    if (collision.isBlocked(this.mesh.position.x, this.mesh.position.z, RADIUS)) {
+    if (collision.isBlocked(this.mesh.position.x, this.mesh.position.z, RADIUS, this.floorId)) {
       this.alive = false
     }
   }

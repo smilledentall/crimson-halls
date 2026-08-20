@@ -8,13 +8,15 @@ export type EnemyState = 'idle' | 'chasing' | 'attacking' | 'retreating' | 'dead
 /** Informações do mundo que a IA do inimigo precisa (fornecidas pela engine). */
 export interface EnemyWorld {
   playerPosition: THREE.Vector3
+  /** Andar atual do jogador (multi-andar) — gating de agressão. */
+  playerFloorId: string
   collision: CollisionSystem
   damagePlayer: (amount: number) => void
-  fireProjectile: (origin: THREE.Vector3, target: THREE.Vector3, damage: number) => void
+  fireProjectile: (origin: THREE.Vector3, target: THREE.Vector3, damage: number, floorId: string) => void
   /** Explosão em área (kamikaze). A engine aplica dano no jogador/inimigos. */
-  explode: (position: THREE.Vector3, radius: number, damage: number) => void
+  explode: (position: THREE.Vector3, radius: number, damage: number, floorId: string) => void
   /** Invoca um inimigo menor (reforço de chefe). */
-  summon: (enemyType: string, origin: THREE.Vector3) => void
+  summon: (enemyType: string, origin: THREE.Vector3, floorId: string) => void
   /** Som dramático (rugido de chefe). */
   roar: () => void
 }
@@ -45,6 +47,10 @@ export interface CombatModifiers {
  */
 export class Enemy {
   readonly type: EnemyTypeDefinition
+  /** Andar a que o inimigo pertence (multi-andar). '' = andar único (legado). */
+  readonly floorId: string
+  /** Altura do chão do andar (multi-andar) — base do Y do corpo. */
+  protected floorY = 0
   /** Raiz do corpo (posição/rotação/escala em grupo). */
   readonly mesh: THREE.Group
   /** Volume invisível usado como alvo do raycast. */
@@ -88,8 +94,10 @@ export class Enemy {
     z: number,
     healthMultiplier = 1,
     combat: CombatModifiers = {},
+    floorId = '',
   ) {
     this.type = type
+    this.floorId = floorId
     this.health = Math.max(1, Math.round(type.health * healthMultiplier))
     this.maxHealth = this.health
     this.speedMultiplier = combat.speedMultiplier ?? 1
@@ -114,6 +122,12 @@ export class Enemy {
     this.mesh.userData.enemy = this
     this.position = this.mesh.position
     this.mesh.position.set(x, 0, z)
+  }
+
+  /** Posiciona o inimigo na altura do chão do seu andar (multi-andar). */
+  setFloorHeight(height: number): void {
+    this.floorY = height
+    this.mesh.position.y = height
   }
 
   /** Corpo: sprite billboard (se o tipo tem imagem) ou geometria composta. */
@@ -300,7 +314,7 @@ export class Enemy {
       const progress = 1 - Math.max(0, this.deathTimer / DEATH_DURATION)
       const eased = 1 - (1 - progress) * (1 - progress)
       this.mesh.rotation.x = this.spriteMaterial ? 0 : eased * (Math.PI / 2)
-      this.mesh.position.y = -eased * 0.25
+      this.mesh.position.y = this.floorY - eased * 0.25
       if (this.spriteMaterial) {
         this.spriteMaterial.opacity = 1 - eased
       } else {
@@ -317,36 +331,44 @@ export class Enemy {
     const dz = playerPos.z - this.position.z
     const distance = Math.hypot(dx, dz)
 
-    const hasLineOfSight = world.collision.hasClearLine(
-      this.position.x,
-      this.position.z,
-      playerPos.x,
-      playerPos.z,
-    )
+    // Multi-andar: inimigo só reage/vê/ataca o jogador no MESMO andar. Em outro
+    // andar (ou no formato legado, onde floorId === playerFloorId === '') fica idle.
+    const sameFloor = world.playerFloorId === this.floorId
+    if (sameFloor) {
+      const hasLineOfSight = world.collision.hasClearLine(
+        this.position.x,
+        this.position.z,
+        playerPos.x,
+        playerPos.z,
+        this.floorId,
+      )
 
-    // Agressão: por detecção normal (linha de visão + alcance) OU após levar
-    // dano (alerted) — um tiro à distância acorda o inimigo e o faz avançar,
-    // independente da distância até o jogador.
-    if (this.alerted || (hasLineOfSight && distance <= AGGRO_RANGE)) {
-      if (this.shouldRetreat(distance)) {
-        this.state = 'retreating'
-        this.move(-1, dx, dz, distance, dt, world)
-      } else if (this.shouldAttack(distance)) {
-        this.state = 'attacking'
-        if (this.attackCooldown <= 0) {
-          this.performAttack(world)
-          this.attackCooldown = this.type.attackInterval * this.attackIntervalMultiplier
+      // Agressão: por detecção normal (linha de visão + alcance) OU após levar
+      // dano (alerted) — um tiro à distância acorda o inimigo e o faz avançar,
+      // independente da distância até o jogador.
+      if (this.alerted || (hasLineOfSight && distance <= AGGRO_RANGE)) {
+        if (this.shouldRetreat(distance)) {
+          this.state = 'retreating'
+          this.move(-1, dx, dz, distance, dt, world)
+        } else if (this.shouldAttack(distance)) {
+          this.state = 'attacking'
+          if (this.attackCooldown <= 0) {
+            this.performAttack(world)
+            this.attackCooldown = this.type.attackInterval * this.attackIntervalMultiplier
+          }
+        } else {
+          this.state = 'chasing'
+          this.move(1, dx, dz, distance, dt, world)
         }
       } else {
-        this.state = 'chasing'
-        this.move(1, dx, dz, distance, dt, world)
+        this.state = 'idle'
       }
+
+      // Vira de frente para o jogador.
+      this.mesh.rotation.y = Math.atan2(dx, dz)
     } else {
       this.state = 'idle'
     }
-
-    // Vira de frente para o jogador.
-    this.mesh.rotation.y = Math.atan2(dx, dz)
 
     // Flash vermelho ao levar dano (em todas as partes do corpo).
     this.setDamageFlash(this.flashTimer > 0)
@@ -366,6 +388,7 @@ export class Enemy {
       { x: this.position.x, z: this.position.z },
       { x: (dx / distance) * step, z: (dz / distance) * step },
       this.type.radius,
+      this.floorId,
     )
     this.position.x = resolved.x
     this.position.z = resolved.z

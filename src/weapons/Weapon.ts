@@ -8,6 +8,8 @@ export interface WeaponContext {
   getTargets: () => THREE.Object3D[]
   /** Inimigos vivos (para corpo a corpo/área). */
   getEnemies: () => Enemy[]
+  /** Andar atual do jogador (multi-andar) — filtrar alvos de melee. */
+  getPlayerFloor: () => string
   getAmmo: (weaponId: WeaponId) => number
   spendAmmo: (weaponId: WeaponId, amount: number) => void
   onEnemyHit: (enemy: Enemy, damage: number) => void
@@ -147,6 +149,8 @@ export class MeleeWeapon extends Weapon {
 
     for (const enemy of ctx.getEnemies()) {
       if (!enemy.alive) continue
+      // Multi-andar: o golpe só atinge inimigos do andar atual do jogador.
+      if (enemy.floorId !== ctx.getPlayerFloor()) continue
       this.toEnemy.subVectors(enemy.position, this.origin)
       this.toEnemy.y = 0
       const distance = this.toEnemy.length()

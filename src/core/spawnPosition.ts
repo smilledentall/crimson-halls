@@ -28,13 +28,14 @@ export function findSpawnPosition(
   collision: CollisionSystem,
   occupants: SpawnOccupant[],
   attempts = 24,
+  floorId?: string,
 ): { x: number; z: number } {
   for (let i = 0; i < attempts; i++) {
     const angle = Math.random() * Math.PI * 2
     const dist = MIN_OFFSET + Math.random() * (MAX_OFFSET - MIN_OFFSET)
     const x = baseX + Math.cos(angle) * dist
     const z = baseZ + Math.sin(angle) * dist
-    if (collision.isBlocked(x, z, radius)) continue
+    if (collision.isBlocked(x, z, radius, floorId)) continue
     let overlapped = false
     for (const other of occupants) {
       const minGap = Math.max(MIN_SEPARATION, other.radius + radius + GAP)

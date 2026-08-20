@@ -306,6 +306,27 @@ export interface LevelDefinition {
   startFloorId?: string
 }
 
+/**
+ * Resolve o andar de spawn do jogador com fallback em cascata (§7 do plano):
+ * 1) floorId salvo no checkpoint (se existir no nível) → 2) `startFloorId` do
+ * nível → 3) andar que contém o marcador 'P' → 4) floors[0]. Nível legado
+ * (sem `floors`) = '' (andar único).
+ */
+export function resolveSpawnFloorId(
+  definition: LevelDefinition,
+  savedFloorId?: string,
+): string {
+  if (!definition.floors || definition.floors.length === 0) return ''
+  const valid = new Set(definition.floors.map(floor => floor.id))
+  if (savedFloorId && valid.has(savedFloorId)) return savedFloorId
+  if (definition.startFloorId && valid.has(definition.startFloorId)) return definition.startFloorId
+  const withPlayer = definition.floors.find(floor =>
+    floor.grid.some(row => row.includes(CHAR_PLAYER)),
+  )
+  if (withPlayer) return withPlayer.id
+  return definition.floors[0].id
+}
+
 export interface DoorDefinition {
   /** 'D1', 'D2', ... — corresponde às células 'D' do grid, em ordem de varredura. */
   marker: string
@@ -394,12 +415,18 @@ export interface EnemySpawn {
   x: number
   z: number
   enemyType: string
+  /** Andar a que o inimigo pertence (multi-andar). Ausente/'' = andar único. */
+  floorId?: string
 }
 
 export interface PickupSpawn {
   x: number
   z: number
   kind: 'health' | 'ammo' | 'currency'
+  /** Andar a que o pickup pertence (multi-andar). Ausente/'' = andar único. */
+  floorId?: string
+  /** Altura do chão do andar — base do Y flutuante (multi-andar). */
+  floorY?: number
 }
 
 export interface CressetSpawn {
@@ -651,13 +678,15 @@ export class LevelLoader {
 
   /**
    * Parser multi-andar (novo formato): para cada andar extrai paredes (com
-   * `floorId`), spawn do jogador ('P') e limites; o nível inteiro usa o spawn
-   * do andar inicial. Nesta fase não há inimigos, portas, cressets, alavancas,
-   * pickups nem notas por andar — o foco é o teste estrutural isolado (§9).
+   * `floorId`), spawn do jogador ('P'), inimigos (E/S/K/T/B) e pickups
+   * (H/A/C) com `floorId` + `floorY`; o nível inteiro usa o spawn do andar
+   * inicial. Usado no teste isolado multi-andar (§9) e, depois, no jogo.
    */
   private parseMultiFloor(definition: LevelDefinition): ParsedLevel {
     // Células de escada por andar: key = `${floorId}:${marker}`.
     const stairCells = new Map<string, { x: number; z: number }>()
+    const enemySpawns: EnemySpawn[] = []
+    const pickups: PickupSpawn[] = []
 
     const floors: ParsedFloor[] = (definition.floors ?? []).map(floor => {
       const walls: WallAABB[] = []
@@ -695,6 +724,29 @@ export class LevelLoader {
               x: x + TILE_SIZE / 2,
               z: z + TILE_SIZE / 2,
             })
+          } else if (char === CHAR_HEALTH || char === CHAR_AMMO || char === CHAR_CURRENCY) {
+            pickups.push({
+              x: x + TILE_SIZE / 2,
+              z: z + TILE_SIZE / 2,
+              kind:
+                char === CHAR_HEALTH
+                  ? 'health'
+                  : char === CHAR_AMMO
+                    ? 'ammo'
+                    : 'currency',
+              floorId: floor.id,
+              floorY: floor.height,
+            })
+          } else {
+            const enemyType = this.enemyTypeForChar(char)
+            if (enemyType) {
+              enemySpawns.push({
+                x: x + TILE_SIZE / 2,
+                z: z + TILE_SIZE / 2,
+                enemyType,
+                floorId: floor.id,
+              })
+            }
           }
         }
       }
@@ -752,8 +804,8 @@ export class LevelLoader {
       name: definition.name,
       walls: floors.flatMap(floor => floor.walls),
       playerSpawn: startFloor?.playerSpawn ?? { x: TILE_SIZE, z: TILE_SIZE, yaw: 0 },
-      enemySpawns: [],
-      pickups: [],
+      enemySpawns,
+      pickups,
       cressets: [],
       doors: [],
       levers: [],
@@ -770,6 +822,24 @@ export class LevelLoader {
       stairs,
       floors,
       startFloorId: startFloor?.id,
+    }
+  }
+
+  /** Mapeia o marcador do grid para o id do tipo de inimigo (ou undefined). */
+  private enemyTypeForChar(char: string): string | undefined {
+    switch (char) {
+      case CHAR_ENEMY:
+        return 'chaser'
+      case CHAR_SHOOTER:
+        return 'shooter'
+      case CHAR_KAMIKAZE:
+        return 'kamikaze'
+      case CHAR_TANK:
+        return 'tank'
+      case CHAR_BOSS:
+        return 'boss'
+      default:
+        return undefined
     }
   }
 

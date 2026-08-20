@@ -15,8 +15,9 @@ export class RangedEnemy extends Enemy {
     z: number,
     healthMultiplier = 1,
     combat: CombatModifiers = {},
+    floorId = '',
   ) {
-    super(type, x, z, healthMultiplier, combat)
+    super(type, x, z, healthMultiplier, combat, floorId)
   }
 
   protected buildSilhouette(scale: number): void {
@@ -81,6 +82,6 @@ export class RangedEnemy extends Enemy {
       playerPos.y,
       origin.z + Math.cos(angle) * 24,
     )
-    world.fireProjectile(origin, target, this.type.attackDamage)
+    world.fireProjectile(origin, target, this.type.attackDamage, this.floorId)
   }
 }

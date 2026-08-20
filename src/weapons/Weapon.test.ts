@@ -25,6 +25,7 @@ function makeContext(overrides: Partial<WeaponContext> = {}) {
     camera,
     getTargets: () => [],
     getEnemies: () => [],
+    getPlayerFloor: () => '',
     getAmmo: id => ammo[id],
     spendAmmo: (id, amount) => {
       ammo[id] -= amount

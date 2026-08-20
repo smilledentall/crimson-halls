@@ -32,8 +32,9 @@ export class BossEnemy extends Enemy {
     z: number,
     healthMultiplier = 1,
     combat: CombatModifiers = {},
+    floorId = '',
   ) {
-    super(type, x, z, healthMultiplier, combat)
+    super(type, x, z, healthMultiplier, combat, floorId)
   }
 
   protected buildSilhouette(scale: number): void {
@@ -195,7 +196,7 @@ export class BossEnemy extends Enemy {
         break
       case 'slam': {
         const radius = this.phase >= 3 ? 5.2 : this.phase === 2 ? 4.8 : 4.2
-        world.explode(this.position.clone(), radius, this.type.attackDamage)
+        world.explode(this.position.clone(), radius, this.type.attackDamage, this.floorId)
         break
       }
       case 'phaseburst':
@@ -217,7 +218,7 @@ export class BossEnemy extends Enemy {
         playerPos.y,
         origin.z + Math.cos(angle) * RANGED_RANGE,
       )
-      world.fireProjectile(origin, target, PROJECTILE_DAMAGE)
+      world.fireProjectile(origin, target, PROJECTILE_DAMAGE, this.floorId)
     }
   }
 
@@ -232,7 +233,7 @@ export class BossEnemy extends Enemy {
       const origin = this.position.clone()
       origin.x += (Math.random() * 2 - 1) * 3.5
       origin.z += (Math.random() * 2 - 1) * 3.5
-      world.summon(enemyType, origin)
+      world.summon(enemyType, origin, this.floorId)
     }
   }
 

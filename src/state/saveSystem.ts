@@ -3,12 +3,14 @@ import { CAMPAIGN_ORDER, LEVELS_BY_ID } from '../levels/levels'
 import { isValidDifficulty } from './difficulty.config'
 import type { DifficultyId } from './difficulty.config'
 
-export const SAVE_VERSION = 3
+export const SAVE_VERSION = 4
 const SAVE_KEY = 'crimson-halls-save-v1'
 
 export interface SaveData {
   version: number
   levelId: string
+  /** Andar do checkpoint (multi-andar). Ausente/omisso = nível legado (andar único). */
+  floorId?: string
   health: number
   ammo: Record<WeaponId, number>
   kills: number
@@ -25,7 +27,13 @@ export interface SaveData {
 
 /** Persiste um checkpoint completo (nível, vida, progressão...). */
 export function saveGame(data: Omit<SaveData, 'version'>): void {
-  const payload: SaveData = { version: SAVE_VERSION, ...data }
+  // floorId vazio (andar único) é omitido do save — compat com níveis legados.
+  const { floorId, ...rest } = data
+  const payload: SaveData = {
+    version: SAVE_VERSION,
+    ...rest,
+    ...(floorId ? { floorId } : {}),
+  }
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload))
   } catch {
@@ -96,20 +104,26 @@ export function loadGame(): SaveData | null {
       }
     }
 
-    if (data.version !== SAVE_VERSION) return null
-    if (!LEVELS_BY_ID[data.levelId]) return null
-    return {
-      version: SAVE_VERSION,
-      levelId: data.levelId,
-      health: data.health,
-      ammo: data.ammo,
-      kills: data.kills,
-      difficulty: normalizeDifficulty(data.difficulty),
-      currency: data.currency ?? 0,
-      weaponUpgrades: data.weaponUpgrades ?? {},
-      skillPoints: data.skillPoints ?? 0,
-      skillUpgrades: data.skillUpgrades ?? {},
+    // v3 = mesma estrutura, sem floorId (campo opcional ausente → migração não
+    // destrutiva: continuaGame usa o andar padrão do nível). v4 = formato atual.
+    if (data.version === 3 || data.version === SAVE_VERSION) {
+      if (!LEVELS_BY_ID[data.levelId]) return null
+      return {
+        version: SAVE_VERSION,
+        levelId: data.levelId,
+        floorId: data.version === SAVE_VERSION ? data.floorId : undefined,
+        health: data.health,
+        ammo: data.ammo,
+        kills: data.kills,
+        difficulty: normalizeDifficulty(data.difficulty),
+        currency: data.currency ?? 0,
+        weaponUpgrades: data.weaponUpgrades ?? {},
+        skillPoints: data.skillPoints ?? 0,
+        skillUpgrades: data.skillUpgrades ?? {},
+      }
     }
+
+    return null
   } catch {
     return null
   }

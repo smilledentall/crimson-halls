@@ -4,6 +4,8 @@ export interface RocketConfig {
   origin: THREE.Vector3
   direction: THREE.Vector3
   speed: number
+  /** Andar a que o foguete pertence — colide/explode só nesse andar. */
+  floorId?: string
 }
 
 const MAX_LIFETIME = 4
@@ -16,11 +18,14 @@ const MAX_LIFETIME = 4
 export class Rocket {
   readonly mesh: THREE.Mesh
   readonly velocity: THREE.Vector3
+  /** Andar a que o foguete pertence ('' = andar único). */
+  readonly floorId: string
   alive = true
 
   private lifetime = MAX_LIFETIME
 
   constructor(config: RocketConfig) {
+    this.floorId = config.floorId ?? ''
     const material = new THREE.MeshStandardMaterial({
       color: 0x6a6a72,
       emissive: 0xff5533,

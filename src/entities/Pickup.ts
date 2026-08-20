@@ -6,6 +6,10 @@ export interface PickupDefinition {
   kind: PickupKind
   x: number
   z: number
+  /** Andar a que o pickup pertence (multi-andar). '' = andar único. */
+  floorId?: string
+  /** Altura do chão do andar — base do Y flutuante. */
+  floorY?: number
 }
 
 const COLLECT_DURATION = 0.2
@@ -22,11 +26,13 @@ export class Pickup {
   /** Id no nível atual (persistência de sessão). */
   id = ''
 
+  private readonly floorY: number
   private bobPhase: number
   private collectTimer = 0
 
   constructor(definition: PickupDefinition) {
     this.definition = definition
+    this.floorY = definition.floorY ?? 0
     this.bobPhase = Math.random() * Math.PI * 2
 
     const isHealth = definition.kind === 'health'
@@ -79,7 +85,7 @@ export class Pickup {
       this.mesh.add(tip)
     }
 
-    this.mesh.position.set(definition.x, 0.55, definition.z)
+    this.mesh.position.set(definition.x, this.floorY + 0.55, definition.z)
   }
 
   update(dt: number): void {
@@ -92,7 +98,7 @@ export class Pickup {
       return
     }
     this.mesh.rotation.y += dt * 1.8
-    this.mesh.position.y = 0.55 + Math.sin(this.bobPhase) * 0.08
+    this.mesh.position.y = this.floorY + 0.55 + Math.sin(this.bobPhase) * 0.08
     this.bobPhase += dt * 2.5
   }
 

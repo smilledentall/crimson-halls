@@ -20,8 +20,9 @@ export class KamikazeEnemy extends Enemy {
     z: number,
     healthMultiplier = 1,
     combat: CombatModifiers = {},
+    floorId = '',
   ) {
-    super(type, x, z, healthMultiplier, combat)
+    super(type, x, z, healthMultiplier, combat, floorId)
   }
 
   protected buildSilhouette(scale: number): void {
@@ -53,6 +54,9 @@ export class KamikazeEnemy extends Enemy {
     super.update(dt, world)
     if (this.state === 'dead') return
 
+    // Multi-andar: o pulso só acende no mesmo andar do jogador.
+    if (world.playerFloorId !== this.floorId) return
+
     this.elapsed += dt
     const playerPos = world.playerPosition
     const distance = Math.hypot(playerPos.x - this.position.x, playerPos.z - this.position.z)
@@ -79,6 +83,7 @@ export class KamikazeEnemy extends Enemy {
       this.position.clone(),
       this.type.explosionRadius ?? 3,
       this.type.explosionDamage ?? 25,
+      this.floorId,
     )
     this.die()
   }
