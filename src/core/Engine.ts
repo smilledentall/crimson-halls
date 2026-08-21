@@ -133,7 +133,7 @@ export class Engine {
   /** Geometria estática cacheada por id de nível (não regenera a cada troca). */
   private levelGroupCache = new Map<string, THREE.Group>()
   private currentParsed: ParsedLevel | null = null
-  private doorMeshes: THREE.Group[] = []
+  private doorMeshes: Array<{ mesh: THREE.Group; floorId: string }> = []
   private noteMeshes: THREE.Group[] = []
   private ambientLight: THREE.AmbientLight | null = null
   private hemisphereLight: THREE.HemisphereLight | null = null
@@ -608,6 +608,7 @@ export class Engine {
     this.pulseDoors(dt)
     this.pulseLevers(dt)
     this.updateDoorLabels()
+    this.updateDoorCulling()
     this.updateMinimap()
 
     if (this.composer) {
@@ -1505,6 +1506,7 @@ export class Engine {
   /** Detecta a porta mais próxima do jogador e expõe o prompt no store. */
   private updateDoorInteraction(): void {
     if (!this.player) return
+    const currentFloor = this.collision.getCurrentFloor()
     let nearest: {
       label: string
       targetLevelId: string
@@ -1514,6 +1516,8 @@ export class Engine {
     } | null = null
     let nearestDist = Infinity
     for (const door of this.currentParsed?.doors ?? []) {
+      // Multi-andar: só mostra portas do andar atual
+      if ((door.floorId ?? '') !== currentFloor) continue
       if (!door.targetLevelId || !LEVELS_BY_ID[door.targetLevelId]) continue
       const dist = Math.hypot(door.x - this.player.position.x, door.z - this.player.position.z)
       if (dist < DOOR_INTERACT_RANGE && dist < nearestDist) {
@@ -1942,7 +1946,13 @@ export class Engine {
     // Destravam por setor limpo, por válvula (`requires`) ou pela morte do chefe.
     this.doorGlowMaterials = []
     this.doorLabels = []
+    console.log(`[debug-door] Parsed doors: ${parsed.doors.length}`)
     for (const door of parsed.doors) {
+      // Multi-andar: altura do piso onde a porta está
+      const doorFloor = parsed.floors?.find(f => f.id === door.floorId)
+      const floorHeight = doorFloor?.height ?? 0
+      const floorId = door.floorId ?? ''
+      console.log(`[debug-door] Door ${door.marker} floorId=${floorId} floorHeight=${floorHeight} pos=(${door.x}, ${door.z}) label=${door.label}`)
       const mesh = this.buildDoorMesh(
         door.x,
         door.z,
@@ -1951,10 +1961,12 @@ export class Engine {
         door.bossLocked,
         door.label,
         door.rotationY,
+        floorHeight,
       )
-      this.doorMeshes.push(mesh)
+      this.doorMeshes.push({ mesh, floorId })
       this.scene.add(mesh)
     }
+    console.log(`[debug-door] Total door meshes created: ${this.doorMeshes.length}`)
 
     // Válvulas/alavancas (destravam portas com `requires`).
     this.activatedLevers = new Set()
@@ -2030,6 +2042,7 @@ export class Engine {
     bossLocked: boolean,
     label: string,
     rotationY: number,
+    floorHeight: number = 0,
   ): THREE.Group {
     const group = new THREE.Group()
     const glowColor = secret ? 0xe04aff : 0x35e0c0
@@ -2048,7 +2061,7 @@ export class Engine {
 
     const planeGeo = new THREE.PlaneGeometry(1, 1)
     const glow = new THREE.Mesh(planeGeo, doorMat)
-    glow.position.set(x, 0, z)
+    glow.position.set(x, floorHeight, z)
     glow.rotation.y = rotationY
     group.add(glow)
 
@@ -2066,7 +2079,7 @@ export class Engine {
       const artAspect = cropped.image.width / cropped.image.height
       const height = DOOR_WIDTH / artAspect
       glow.scale.set(DOOR_WIDTH, height, 1)
-      glow.position.y = height / 2
+      glow.position.y = floorHeight + height / 2
     }
     const entry = getSpriteEntry(url)
     if (entry) applyTexture(entry)
@@ -2086,7 +2099,7 @@ export class Engine {
       const sprite = new THREE.Sprite(mat)
       const faceX = Math.sin(rotationY)
       const faceZ = Math.cos(rotationY)
-      sprite.position.set(x + faceX * DOOR_LABEL_OFFSET, WALL_HEIGHT - 0.4, z + faceZ * DOOR_LABEL_OFFSET)
+      sprite.position.set(x + faceX * DOOR_LABEL_OFFSET, floorHeight + WALL_HEIGHT - 0.4, z + faceZ * DOOR_LABEL_OFFSET)
       const texAspect = texture.image.width / texture.image.height
       const textScale = Math.min(6, Math.max(2.6, label.length * 0.22))
       sprite.scale.set(textScale, textScale / texAspect, 1)
@@ -2159,7 +2172,7 @@ export class Engine {
   }
 
   /** Monta o objeto 3D de uma nota de lore (livro/rolo brilhante). */
-  private buildNoteMesh(x: number, z: number, floorId?: string, floorHeight: number = 0): THREE.Group {
+  private buildNoteMesh(x: number, z: number, _floorId?: string, floorHeight: number = 0): THREE.Group {
     const group = new THREE.Group()
     const cover = new THREE.Mesh(
       new THREE.BoxGeometry(0.6, 0.12, 0.4),
@@ -2252,6 +2265,14 @@ export class Engine {
     }
   }
 
+  /** Culling de portas por andar: só mostra portas do andar atual. */
+  private updateDoorCulling(): void {
+    const currentFloor = this.collision.getCurrentFloor()
+    for (const entry of this.doorMeshes) {
+      entry.mesh.visible = entry.floorId === currentFloor
+    }
+  }
+
   private clearLevel(): void {
     // Luzes de tocha/efeito pertencem ao nível: sem isso, PointLights antigos
     // ficam presos na cena (em coordenadas absolutas) e o bloom estoura.
@@ -2285,8 +2306,8 @@ export class Engine {
     }
     this.rockets = []
     for (const door of this.doorMeshes) {
-      this.scene?.remove(door)
-      door.traverse(child => {
+      this.scene?.remove(door.mesh)
+      door.mesh.traverse(child => {
         if (child instanceof THREE.Mesh) {
           child.geometry.dispose()
           const material = child.material

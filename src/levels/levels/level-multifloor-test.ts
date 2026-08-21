@@ -31,8 +31,11 @@ export const levelMultiFloorTest: LevelDefinition = {
         '#............#',
         '#...L........#',
         '#............#',
-        '#............#',
+        '#...........D#',
         '##############',
+      ],
+      doors: [
+        { marker: 'D1', targetLevelId: 'level-multifloor-test', label: 'Retorno Térreo' },
       ],
     },
     {
@@ -45,8 +48,12 @@ export const levelMultiFloorTest: LevelDefinition = {
         '#..........E.#',
         '#...l........#',
         '#..X.........#',
-        '#.......N....#',
+        '#.......N.D.D#',
         '##############',
+      ],
+      doors: [
+        { marker: 'D1', targetLevelId: 'level-1', label: 'Saída Andar Superior' },
+        { marker: 'D2', targetLevelId: 'level-2', label: 'Boss Lock', bossLocked: true },
       ],
     },
   ],

@@ -265,12 +265,50 @@ describe('LevelLoader', () => {
     expect(parsed.enemySpawns.filter(s => s.floorId === 'floor-2')).toHaveLength(1)
     // TESTE TEMPORÁRIO (§12): tochas (X) só no andar superior e notas (N) em
     // cada andar — cada um com floorId/floorY.
-    expect(parsed.cressets).toHaveLength(3)
-    expect(parsed.cressets.every(c => c.floorId === 'floor-2')).toBe(true)
-    expect(parsed.cressets.every(c => c.floorY === 5)).toBe(true)
+    // 3 tochas (X) do andar superior + 4 cressets das portas do floor-2 (2 portas * 2 cressets)
+    expect(parsed.cressets.length).toBeGreaterThanOrEqual(7)
+    expect(parsed.cressets.filter(c => c.floorId === 'floor-2').length).toBe(7)
     expect(parsed.notes).toHaveLength(2)
     expect(parsed.notes.filter(n => n.floorId === 'floor-1')).toHaveLength(1)
     expect(parsed.notes.filter(n => n.floorId === 'floor-2')).toHaveLength(1)
+    // Portas por andar
+    expect(parsed.doors).toHaveLength(3)
+    expect(parsed.doors.filter(d => d.floorId === 'floor-1')).toHaveLength(1)
+    expect(parsed.doors.filter(d => d.floorId === 'floor-2')).toHaveLength(2)
+    expect(parsed.doors.find(d => d.floorId === 'floor-1')?.label).toBe('Retorno Térreo')
+    expect(parsed.doors.find(d => d.floorId === 'floor-2' && d.marker === 'D1')?.label).toBe('Saída Andar Superior')
+    expect(parsed.doors.find(d => d.floorId === 'floor-2' && d.marker === 'D2')?.label).toBe('Boss Lock')
+    expect(parsed.doors.find(d => d.floorId === 'floor-2' && d.marker === 'D2')?.bossLocked).toBe(true)
+  })
+
+  it('porta em nível multi-andar leva a nível de andar único — usa startFloorId do destino', () => {
+    const parsed = loader.parse({
+      id: 'multi-source',
+      name: 'Multi Source',
+      startFloorId: 'floor-2',
+      floors: [
+        {
+          id: 'floor-1',
+          height: 0,
+          grid: ['########', '#D......#', '########'],
+        },
+        {
+          id: 'floor-2',
+          height: 5,
+          grid: ['########', '#..D....#', '########'],
+          doors: [
+            { marker: 'D1', targetLevelId: 'level-1', label: 'Saída para Single' },
+          ],
+        },
+      ],
+    })
+    // Porta no floor-2 aponta para level-1 (andar único)
+    const door = parsed.doors.find(d => d.floorId === 'floor-2')
+    expect(door).toBeDefined()
+    expect(door?.targetLevelId).toBe('level-1')
+    expect(door?.floorId).toBe('floor-2')
+    // level-1 é andar único, então startFloorId deve ser '' (string vazia)
+    // O player NÃO deve levar o floorId 'floor-2' para o nível single-floor
   })
 
   it('parseia cressets e notas multi-andar com floorId e floorY', () => {

@@ -374,6 +374,8 @@ export interface ParsedDoor {
   bossLocked: boolean
   /** Rotação em Y (rad) do plano da porta para encarar o ambiente aberto. */
   rotationY: number
+  /** Andar a que a porta pertence (multi-andar). Ausente/'' = andar único. */
+  floorId?: string
 }
 
 export interface ParsedLever {
@@ -693,6 +695,7 @@ export class LevelLoader {
     const pickups: PickupSpawn[] = []
     const cressets: CressetSpawn[] = []
     const notes: Array<{ x: number; z: number; floorId?: string }> = []
+    const doors: ParsedDoor[] = []
 
     const floors: ParsedFloor[] = (definition.floors ?? []).map(floor => {
       const walls: WallAABB[] = []
@@ -771,6 +774,43 @@ export class LevelLoader {
               floorId: floor.id,
               floorY: floor.height,
             })
+          } else if (char === CHAR_DOOR) {
+            // Marcador D1, D2... em ordem de varredura por andar.
+            const floorDoors = floor.doors ?? []
+            const doorIndex = doors.filter(d => d.floorId === floor.id).length
+            const marker = `D${doorIndex + 1}`
+            const config = floorDoors.find(door => door.marker === marker)
+            const doorPlacement = computeDoorPlacement(grid, row, col)
+            doors.push({
+              marker,
+              x: doorPlacement.x,
+              z: doorPlacement.z,
+              targetLevelId: config?.targetLevelId ?? '',
+              label: config?.label || humanizeLevelId(config?.targetLevelId ?? ''),
+              secret: config?.secret ?? false,
+              requires: config?.requires ?? '',
+              bossLocked: config?.bossLocked ?? false,
+              rotationY: doorPlacement.rotationY,
+              floorId: floor.id,
+            })
+
+            // Adiciona dois cressets flanqueando a porta na mesma parede
+            const doorCressets = computeDoorCressets(grid, row, col, doorPlacement)
+            for (const cr of doorCressets) {
+              cressets.push({
+                x: cr.x,
+                z: cr.z,
+                mounted: cr.mounted,
+                color: LIGHTING_CONFIG.torchColor,
+                intensity: LIGHTING_CONFIG.torchIntensity,
+                distance: LIGHTING_CONFIG.torchDistance,
+                decay: LIGHTING_CONFIG.torchDecay,
+                flameHeight: LIGHTING_CONFIG.torchFlameHeight,
+                lightHeight: LIGHTING_CONFIG.torchLightHeight,
+                floorId: floor.id,
+                floorY: floor.height,
+              })
+            }
           } else if (char === CHAR_NOTE) {
             notes.push({ x: x + TILE_SIZE / 2, z: z + TILE_SIZE / 2, floorId: floor.id })
           } else {
@@ -843,7 +883,7 @@ export class LevelLoader {
       enemySpawns,
       pickups,
       cressets,
-      doors: [],
+      doors,
       levers: [],
       notes,
       waves: definition.waves ?? [],
