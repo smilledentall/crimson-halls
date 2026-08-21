@@ -444,6 +444,10 @@ export interface CressetSpawn {
   flameHeight: number
   /** Altura da ORIGEM da luz (acima da chama, subindo ao teto). */
   lightHeight: number
+  /** Andar a que o cresset pertence (multi-andar). Ausente/'' = andar único. */
+  floorId?: string
+  /** Altura do chão do andar — base do Y do cresset (multi-andar). */
+  floorY?: number
 }
 
 export interface ParsedFloor {
@@ -470,7 +474,7 @@ export interface ParsedLevel {
   cressets: CressetSpawn[]
   doors: ParsedDoor[]
   levers: ParsedLever[]
-  notes: Array<{ x: number; z: number }>
+  notes: Array<{ x: number; z: number; floorId?: string }>
   waves: WaveDefinition[]
   waveSpawns: Array<{ x: number; z: number }>
   atmosphere: LevelAtmosphere
@@ -687,6 +691,8 @@ export class LevelLoader {
     const stairCells = new Map<string, { x: number; z: number }>()
     const enemySpawns: EnemySpawn[] = []
     const pickups: PickupSpawn[] = []
+    const cressets: CressetSpawn[] = []
+    const notes: Array<{ x: number; z: number; floorId?: string }> = []
 
     const floors: ParsedFloor[] = (definition.floors ?? []).map(floor => {
       const walls: WallAABB[] = []
@@ -737,6 +743,36 @@ export class LevelLoader {
               floorId: floor.id,
               floorY: floor.height,
             })
+          } else if (char === CHAR_CRESSET) {
+            // Mesma regra do parser legado: desloca a tocha para perto da
+            // parede adjacente (corredor), com a calibração central da tocha.
+            const cx = x + TILE_SIZE / 2
+            const cz = z + TILE_SIZE / 2
+            const wallAbove = row > 0 && grid[row - 1][col] === '#'
+            const wallBelow = row < rows - 1 && grid[row + 1]?.[col] === '#'
+            const wallLeft = col > 0 && grid[row][col - 1] === '#'
+            const wallRight = col < grid[row].length - 1 && grid[row][col + 1] === '#'
+            let fx = cx
+            let fz = cz
+            if (wallLeft && !wallRight) fx = x + CRESSET_WALL_OFFSET
+            else if (wallRight && !wallLeft) fx = x + TILE_SIZE - CRESSET_WALL_OFFSET
+            if (wallAbove && !wallBelow) fz = z + CRESSET_WALL_OFFSET
+            else if (wallBelow && !wallAbove) fz = z + TILE_SIZE - CRESSET_WALL_OFFSET
+            cressets.push({
+              x: fx,
+              z: fz,
+              mounted: wallAbove || wallBelow || wallLeft || wallRight,
+              color: LIGHTING_CONFIG.torchColor,
+              intensity: LIGHTING_CONFIG.torchIntensity,
+              distance: LIGHTING_CONFIG.torchDistance,
+              decay: LIGHTING_CONFIG.torchDecay,
+              flameHeight: LIGHTING_CONFIG.torchFlameHeight,
+              lightHeight: LIGHTING_CONFIG.torchLightHeight,
+              floorId: floor.id,
+              floorY: floor.height,
+            })
+          } else if (char === CHAR_NOTE) {
+            notes.push({ x: x + TILE_SIZE / 2, z: z + TILE_SIZE / 2, floorId: floor.id })
           } else {
             const enemyType = this.enemyTypeForChar(char)
             if (enemyType) {
@@ -806,10 +842,10 @@ export class LevelLoader {
       playerSpawn: startFloor?.playerSpawn ?? { x: TILE_SIZE, z: TILE_SIZE, yaw: 0 },
       enemySpawns,
       pickups,
-      cressets: [],
+      cressets,
       doors: [],
       levers: [],
-      notes: [],
+      notes,
       waves: definition.waves ?? [],
       waveSpawns: definition.waveSpawns ?? [],
       atmosphere: definition.atmosphere ?? {},
@@ -850,6 +886,10 @@ export class LevelLoader {
     if (parsed.floors && parsed.floors.length > 0) {
       for (const floor of parsed.floors) {
         group.add(this.buildFloorGroup(floor, textures))
+        // Cressets do andar: malha posicionada na altura do piso do andar.
+        for (const cresset of parsed.cressets) {
+          if ((cresset.floorId ?? '') === floor.id) group.add(this.buildCresset(cresset))
+        }
       }
     } else {
       group.add(
@@ -1025,7 +1065,7 @@ export class LevelLoader {
 
     group.position.x = cresset.x
     group.position.z = cresset.z
-    group.position.y = 0
+    group.position.y = cresset.floorY ?? 0
     return group
   }
 }

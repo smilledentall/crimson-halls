@@ -28,6 +28,7 @@ import { PLAYER_CONFIG } from '../entities/player.config'
 import { Projectile } from '../entities/Projectile'
 import { Rocket } from '../entities/Rocket'
 import { LevelLoader, resolveSpawnFloorId, WALL_HEIGHT } from '../levels/LevelLoader'
+import type { CressetSpawn } from '../levels/LevelLoader'
 import { getLevelTextures } from './LevelTextureLoader'
 import type { ParsedLevel, ParsedStair, WaveDefinition } from '../levels/LevelLoader'
 import { LEVELS_BY_ID, VICTORY_LEVEL_ID } from '../levels/levels'
@@ -192,11 +193,23 @@ export class Engine {
   }> = []
   private composer: EffectComposer | null = null
   private bloomPass: UnrealBloomPass | null = null
-  private levelLights: Array<{ light: THREE.PointLight; base: number; flicker: boolean }> = []
-  private cressetFlames: Array<{ x: number; y: number; z: number; intensity: number }> = []
+  private levelLights: Array<{
+    light: THREE.PointLight
+    base: number
+    flicker: boolean
+    floorId?: string
+  }> = []
+  private cressetFlames: Array<{
+    x: number
+    y: number
+    z: number
+    intensity: number
+    floorId?: string
+  }> = []
   private cressetSounds: Array<{
     x: number
     z: number
+    floorId?: string
     stop: () => void
     setVolume: (v: number) => void
   }> = []
@@ -396,6 +409,13 @@ export class Engine {
     this.audio.setMasterVolume(initial.masterVolume)
     this.audio.setSfxVolume(initial.sfxVolume)
     this.audio.setMusicVolume(initial.musicVolume)
+    // Acesso direto a um nível (ex.: rota #test=): o jogo já nasce em
+    // 'playing' antes da engine subscrever, então o handlePhaseChange que
+    // faria resume()/startMusic() nunca roda. Inicializa o áudio aqui.
+    if (initial.phase === 'playing') {
+      this.audio.resume()
+      this.audio.startMusic()
+    }
     this.applyGraphicsQuality()
     this.applyBrightness()
 
@@ -690,38 +710,102 @@ export class Engine {
     }
   }
 
-  /** Emite partículas de chama contínuas nos cressets decorativos. */
+  /** Emite partículas de chama contínuas nos cressets decorativos.
+   *  Culling por andar: só emite a chama dos cressets do andar atual, para a
+   *  fogueira do andar de cima não "aparecer" no andar de baixo. */
   private updateCressetFlames(): void {
     if (this.cressetFlames.length === 0 || !this.particles) return
     if (useGameStore.getState().phase !== 'playing') return
+    const currentFloor = this.collision.getCurrentFloor()
     for (const flame of this.cressetFlames) {
+      if ((flame.floorId ?? '') !== currentFloor) continue
       this.particles.spawnFlame(new THREE.Vector3(flame.x, flame.y, flame.z), flame.intensity)
     }
+  }
+
+  /** Cria os loops posicionais de fogueira dos cressets (um som por tocha).
+   *  Extraído para permitir CRIAR TARDIAMENTE: se o AudioContext ainda não
+   *  existia no load do nível (ex.: rota #test=, onde o jogo já nasce em
+   *  'playing' e o resume() só roda depois), `startLoopingPositional` retorna
+   *  null e os sons seriam perdidos para sempre. */
+  private createCressetSounds(cressets: CressetSpawn[]): void {
+    this.cressetSounds = cressets
+      .map(cresset => {
+        const handle = this.audio.startLoopingPositional(
+          'fireplace',
+          new THREE.Vector3(
+            cresset.x,
+            (cresset.floorY ?? 0) + cresset.flameHeight,
+            cresset.z,
+          ),
+        )
+        if (!handle) return null
+        return {
+          x: cresset.x,
+          z: cresset.z,
+          floorId: cresset.floorId,
+          stop: handle.stop,
+          setVolume: handle.setVolume,
+        }
+      })
+      .filter(
+        (
+          entry,
+        ): entry is {
+          x: number
+          z: number
+          floorId: string | undefined
+          stop: () => void
+          setVolume: (v: number) => void
+        } => entry !== null,
+      )
   }
 
   /**
    * Volume do fogo dos cressets conforme a distância do jogador: máximo a até
    * ~3 unidades e caindo a zero a ~28. Atualizado a cada frame.
+   * Culling por andar: fogueira de outro andar fica em silêncio.
    */
   private updateCressetAudio(): void {
+    // Criação tardia: os sons foram descartados no load do nível porque o
+    // AudioContext ainda não existia? Tenta de novo agora (custo zero quando
+    // o contexto continua indisponível — `startLoopingPositional` retorna null
+    // imediatamente). Ao criar, para de tentar (length > 0).
+    if (
+      this.cressetSounds.length === 0 &&
+      this.currentParsed &&
+      this.currentParsed.cressets.length > 0
+    ) {
+      this.createCressetSounds(this.currentParsed.cressets)
+    }
     if (this.cressetSounds.length === 0 || !this.player) return
     const px = this.player.position.x
     const pz = this.player.position.z
+    const currentFloor = this.collision.getCurrentFloor()
     for (const sound of this.cressetSounds) {
       const dx = sound.x - px
       const dz = sound.z - pz
       const distance = Math.sqrt(dx * dx + dz * dz)
-      const volume = distance <= 3 ? 1 : Math.max(0, 1 - (distance - 3) / 25)
+      const volume =
+        (sound.floorId ?? '') === currentFloor
+          ? distance <= 3
+            ? 1
+            : Math.max(0, 1 - (distance - 3) / 25)
+          : 0
       sound.setVolume(volume)
     }
   }
 
-  /** Tochas/luzes de emergência piscando levemente. */
+  /** Tochas/luzes de emergência piscando levemente. Culling por andar: a luz
+   *  do cresset só afeta o andar atual (PointLight sem sombra atravessaria a
+   *  laje e clarearia o andar de baixo). */
   private updateLevelLightFlicker(dt: number): void {
     if (this.levelLights.length === 0) return
+    const currentFloor = this.collision.getCurrentFloor()
     this.flickerTime += dt
     const t = this.flickerTime
     for (const entry of this.levelLights) {
+      entry.light.visible = (entry.floorId ?? '') === currentFloor
       if (!entry.flicker) continue
       const pulse = 0.78 + 0.22 * Math.abs(Math.sin(t * 3 + entry.light.id * 7))
       entry.light.intensity = entry.base * pulse
@@ -1531,11 +1615,16 @@ export class Engine {
     console.log(`[stair] ${stair.id}: ${stair.floorId} -> ${stair.targetFloorId}`)
   }
 
-  /** Detecta se há uma nota de lore por perto e expõe o prompt. */
+  /** Detecta se há uma nota de lore por perto (no andar atual) e expõe o prompt. */
   private updateNoteInteraction(): void {
     if (!this.player) return
+    const currentFloor = this.collision.getCurrentFloor()
     let near = false
-    for (const note of this.currentParsed?.notes ?? []) {
+    // Loga todas as notas do andar atual com suas distâncias
+    const notes = this.currentParsed?.notes ?? []
+    
+    for (const note of notes) {
+      if ((note.floorId ?? '') !== currentFloor) continue
       const dist = Math.hypot(note.x - this.player.position.x, note.z - this.player.position.z)
       if (dist < DOOR_INTERACT_RANGE) {
         near = true
@@ -1543,7 +1632,9 @@ export class Engine {
       }
     }
     const current = useGameStore.getState().interactableNote
-    if (current !== near) useGameStore.getState().setInteractableNote(near)
+    if (current !== near) {
+      useGameStore.getState().setInteractableNote(near)
+    }
   }
 
   /** Ativa uma válvula e destrava as portas que dependem dela. */
@@ -1657,7 +1748,13 @@ export class Engine {
   }
 
   private handlePointerLockChange(locked: boolean): void {
-    if (locked) return
+    if (locked) {
+      // O Pointer Lock é solicitado após um clique (dismiss da intro): retoma
+      // um AudioContext que tenha ficado 'suspended' por autoplay dentro da
+      // janela de user activation do clique.
+      this.audio.resume()
+      return
+    }
     // Saída do Pointer Lock que NÃO fomos nós (ex.: Esc) pausa o jogo.
     if (this.exitPointerIntentional) {
       this.exitPointerIntentional = false
@@ -1818,40 +1915,28 @@ export class Engine {
         cresset.distance,
         cresset.decay,
       )
-      light.position.set(cresset.x, cresset.lightHeight, cresset.z)
+      // Multi-andar: a luz sobe a partir do piso do andar do cresset.
+      light.position.set(cresset.x, (cresset.floorY ?? 0) + cresset.lightHeight, cresset.z)
       this.scene.add(light)
-      this.levelLights.push({ light, base: cresset.intensity, flicker: true })
+      this.levelLights.push({
+        light,
+        base: cresset.intensity,
+        flicker: true,
+        floorId: cresset.floorId,
+      })
     }
 
     // Cressets: emissores contínuos de chama na mesma posição da luz.
     this.cressetFlames = parsed.cressets.map(cresset => ({
       x: cresset.x,
-      y: cresset.flameHeight,
+      y: (cresset.floorY ?? 0) + cresset.flameHeight,
       z: cresset.z,
       intensity: 1,
+      floorId: cresset.floorId,
     }))
 
     // Som ambiente de fogueira (loop posicional) em cada cresset.
-    this.cressetSounds = parsed.cressets
-      .map(cresset => {
-        const handle = this.audio.startLoopingPositional(
-          'fireplace',
-          new THREE.Vector3(cresset.x, cresset.flameHeight, cresset.z),
-        )
-        if (!handle) return null
-        return {
-          x: cresset.x,
-          z: cresset.z,
-          stop: handle.stop,
-          setVolume: handle.setVolume,
-        }
-      })
-      .filter(
-        (
-          entry,
-        ): entry is { x: number; z: number; stop: () => void; setVolume: (v: number) => void } =>
-          entry !== null,
-      )
+    this.createCressetSounds(parsed.cressets)
 
     // Portas: estrutura simples com brilho emissivo (indica interatividade).
     // Destravam por setor limpo, por válvula (`requires`) ou pela morte do chefe.
@@ -1890,7 +1975,10 @@ export class Engine {
 
     // Notas de lore (salas secretas).
     for (const note of parsed.notes) {
-      const mesh = this.buildNoteMesh(note.x, note.z)
+      // Encontrar a altura do piso baseado no floorId
+      const floor = parsed.floors?.find(f => f.id === note.floorId)
+      const floorHeight = floor?.height ?? 0
+      const mesh = this.buildNoteMesh(note.x, note.z, note.floorId, floorHeight)
       this.noteMeshes.push(mesh)
       this.scene.add(mesh)
     }
@@ -2071,7 +2159,7 @@ export class Engine {
   }
 
   /** Monta o objeto 3D de uma nota de lore (livro/rolo brilhante). */
-  private buildNoteMesh(x: number, z: number): THREE.Group {
+  private buildNoteMesh(x: number, z: number, floorId?: string, floorHeight: number = 0): THREE.Group {
     const group = new THREE.Group()
     const cover = new THREE.Mesh(
       new THREE.BoxGeometry(0.6, 0.12, 0.4),
@@ -2089,7 +2177,9 @@ export class Engine {
     )
     page.position.y = 0.62
     group.add(cover, page)
-    group.position.set(x, 0, z)
+    
+    // Usar a altura do piso passada explicitamente
+    group.position.set(x, floorHeight, z)
     return group
   }
 

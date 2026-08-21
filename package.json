@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "debug-note": "echo 'DEBUG: Nota de teste adicionada para verificar edições funcionando'",
     "preview": "vite preview"
   },
   "dependencies": {

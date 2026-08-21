@@ -8,6 +8,13 @@ import type { LevelDefinition } from '../LevelLoader'
  *
  * TESTE TEMPORÁRIO (§8): um inimigo (E = Perseguidor) em cada andar, para
  * validar LOS/perseguição/ataque por andar. Remover após a validação.
+ *
+ * TESTE TEMPORÁRIO (§12 cressets/notas): 3 tochas (X) no andar superior e
+ * uma nota (N) em cada andar, para validar o offset de Y dos cressets, o
+ * culling de luz/chama/áudio por andar e o prompt de nota por andar.
+ * O térreo NÃO tem tocha (fica escuro de propósito — usar a lanterna, L);
+ * a nota do térreo fica perto do spawn para ser encontrável no escuro.
+ * Remover após a validação.
  */
 export const levelMultiFloorTest: LevelDefinition = {
   id: 'level-multifloor-test',
@@ -20,7 +27,7 @@ export const levelMultiFloorTest: LevelDefinition = {
       height: 0,
       grid: [
         '##############',
-        '#P..........E#',
+        '#P.N........E#',
         '#............#',
         '#...L........#',
         '#............#',
@@ -34,11 +41,11 @@ export const levelMultiFloorTest: LevelDefinition = {
       height: 5,
       grid: [
         '##############',
-        '#............#',
+        '#.X........X.#',
         '#..........E.#',
         '#...l........#',
-        '#............#',
-        '#............#',
+        '#..X.........#',
+        '#.......N....#',
         '##############',
       ],
     },

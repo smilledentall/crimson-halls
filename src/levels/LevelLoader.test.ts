@@ -263,6 +263,49 @@ describe('LevelLoader', () => {
     expect(parsed.enemySpawns).toHaveLength(2)
     expect(parsed.enemySpawns.filter(s => s.floorId === 'floor-1')).toHaveLength(1)
     expect(parsed.enemySpawns.filter(s => s.floorId === 'floor-2')).toHaveLength(1)
+    // TESTE TEMPORÁRIO (§12): tochas (X) só no andar superior e notas (N) em
+    // cada andar — cada um com floorId/floorY.
+    expect(parsed.cressets).toHaveLength(3)
+    expect(parsed.cressets.every(c => c.floorId === 'floor-2')).toBe(true)
+    expect(parsed.cressets.every(c => c.floorY === 5)).toBe(true)
+    expect(parsed.notes).toHaveLength(2)
+    expect(parsed.notes.filter(n => n.floorId === 'floor-1')).toHaveLength(1)
+    expect(parsed.notes.filter(n => n.floorId === 'floor-2')).toHaveLength(1)
+  })
+
+  it('parseia cressets e notas multi-andar com floorId e floorY', () => {
+    const parsed = loader.parse({
+      id: 't',
+      name: 'T',
+      floors: [
+        { id: 'f1', height: 0, grid: ['#####', '#N..#', '#...X#', '#####'] },
+        { id: 'f2', height: 5, grid: ['#####', '#X..#', '#...N#', '#####'] },
+      ],
+    })
+    // Um cresset em cada andar, com floorId/floorY corretos.
+    expect(parsed.cressets).toHaveLength(2)
+    const f1C = parsed.cressets.find(c => c.floorId === 'f1')!
+    const f2C = parsed.cressets.find(c => c.floorId === 'f2')!
+    expect(f1C).toBeDefined()
+    expect(f2C).toBeDefined()
+    expect(f1C.floorY).toBe(0)
+    expect(f2C.floorY).toBe(5)
+    // Junto à parede => montado (mounted) e deslocado para a parede.
+    expect(f1C.mounted).toBe(true)
+    expect(f2C.mounted).toBe(true)
+    expect(f1C.x).toBeGreaterThan(0)
+    // Calibração central da tocha preservada (nunca sobrescrita por andar).
+    expect(f2C.color).toBe(LIGHTING_CONFIG.torchColor)
+    expect(f2C.intensity).toBe(LIGHTING_CONFIG.torchIntensity)
+    expect(f2C.distance).toBe(LIGHTING_CONFIG.torchDistance)
+    expect(f2C.decay).toBe(LIGHTING_CONFIG.torchDecay)
+    expect(f2C.flameHeight).toBe(LIGHTING_CONFIG.torchFlameHeight)
+    expect(f2C.lightHeight).toBe(LIGHTING_CONFIG.torchLightHeight)
+    // Uma nota por andar, com floorId; posição no centro da célula.
+    expect(parsed.notes).toHaveLength(2)
+    expect(parsed.notes.filter(n => n.floorId === 'f1')).toHaveLength(1)
+    expect(parsed.notes.filter(n => n.floorId === 'f2')).toHaveLength(1)
+    expect(parsed.notes[0].x).toBe(TILE_SIZE + TILE_SIZE / 2)
   })
 
   it('escadas geradas pelo editor (autoPairStairs) são consumidas pelo LevelLoader', () => {
@@ -301,49 +344,55 @@ describe('LevelLoader', () => {
 
   it('todo cresset (X) do grid gera exatamente uma luz embutida na mesma posição; portas ganham cressets flanqueadores', () => {
     for (const level of ALL_LEVELS) {
-      const grid = level.grid ?? []
       const parsed = loader.parse(level)
-      // Conta X no grid (cressets manuais)
-      const gridX: Array<[number, number]> = []
-      for (let r = 0; r < grid.length; r++) {
-        for (let c = 0; c < grid[r].length; c++) {
-          if (grid[r][c] === 'X') gridX.push([c, r])
-        }
-      }
-      // Conta portas no grid
-      const gridDoors: Array<[number, number]> = []
-      for (let r = 0; r < grid.length; r++) {
-        for (let c = 0; c < grid[r].length; c++) {
-          if (grid[r][c] === 'D') gridDoors.push([c, r])
-        }
-      }
-      // Total de cressets deve ser >= X manuais (pois portas adicionam flanqueadores)
-      expect(parsed.cressets.length).toBeGreaterThanOrEqual(gridX.length)
-      // Validação detalhada: cada cresset de X está na célula X; cressets de porta estão perto de portas
-      for (const cresset of parsed.cressets) {
-        const inXCell = gridX.some(
-          ([c, r]) =>
-            cresset.x >= c * TILE_SIZE &&
-            cresset.x <= c * TILE_SIZE + TILE_SIZE &&
-            cresset.z >= r * TILE_SIZE &&
-            cresset.z <= r * TILE_SIZE + TILE_SIZE,
-        )
-        const nearDoor = gridDoors.some(
-          ([c, r]) => {
-            const doorCx = c * TILE_SIZE + TILE_SIZE / 2
-            const doorCz = r * TILE_SIZE + TILE_SIZE / 2
-            const dist = Math.hypot(cresset.x - doorCx, cresset.z - doorCz)
-            return dist < 4 // cresset flanqueador a ~2.5m do centro da porta
+      // Em multi-andar, cada cresset é validado contra o grid do SEU andar;
+      // no legado, contra o grid raiz.
+      const gridsByFloor: Array<{ floorId: string; rows: string[] }> =
+        level.floors && level.floors.length > 0
+          ? level.floors.map(floor => ({ floorId: floor.id, rows: floor.grid }))
+          : [{ floorId: '', rows: level.grid ?? [] }]
+      for (const { floorId, rows } of gridsByFloor) {
+        // Conta X no grid (cressets manuais) e portas do andar.
+        const gridX: Array<[number, number]> = []
+        const gridDoors: Array<[number, number]> = []
+        for (let r = 0; r < rows.length; r++) {
+          for (let c = 0; c < rows[r].length; c++) {
+            if (rows[r][c] === 'X') gridX.push([c, r])
+            if (rows[r][c] === 'D') gridDoors.push([c, r])
           }
-        )
-        expect(inXCell || nearDoor, `nível ${level.id}: cresset em (${cresset.x},${cresset.z}) deve estar em X ou perto de porta`).toBe(true)
-        // Calibração oficial da tocha: ÚNICA e central (sem override por nível).
-        expect(cresset.color).toBe(LIGHTING_CONFIG.torchColor)
-        expect(cresset.intensity).toBe(LIGHTING_CONFIG.torchIntensity)
-        expect(cresset.distance).toBe(LIGHTING_CONFIG.torchDistance)
-        expect(cresset.decay).toBe(LIGHTING_CONFIG.torchDecay)
-        expect(cresset.flameHeight).toBe(LIGHTING_CONFIG.torchFlameHeight)
-        expect(cresset.lightHeight).toBe(LIGHTING_CONFIG.torchLightHeight)
+        }
+        const floorCressets = parsed.cressets.filter(c => (c.floorId ?? '') === floorId)
+        // Total de cressets do andar deve ser >= X manuais (pois portas adicionam flanqueadores)
+        expect(
+          floorCressets.length,
+          `nível ${level.id} andar '${floorId}': cressets (${floorCressets.length}) devem ser >= X manuais (${gridX.length})`,
+        ).toBeGreaterThanOrEqual(gridX.length)
+        // Validação detalhada: cada cresset de X está na célula X; cressets de porta estão perto de portas
+        for (const cresset of floorCressets) {
+          const inXCell = gridX.some(
+            ([c, r]) =>
+              cresset.x >= c * TILE_SIZE &&
+              cresset.x <= c * TILE_SIZE + TILE_SIZE &&
+              cresset.z >= r * TILE_SIZE &&
+              cresset.z <= r * TILE_SIZE + TILE_SIZE,
+          )
+          const nearDoor = gridDoors.some(
+            ([c, r]) => {
+              const doorCx = c * TILE_SIZE + TILE_SIZE / 2
+              const doorCz = r * TILE_SIZE + TILE_SIZE / 2
+              const dist = Math.hypot(cresset.x - doorCx, cresset.z - doorCz)
+              return dist < 4 // cresset flanqueador a ~2.5m do centro da porta
+            }
+          )
+          expect(inXCell || nearDoor, `nível ${level.id}: cresset em (${cresset.x},${cresset.z}) deve estar em X ou perto de porta`).toBe(true)
+          // Calibração oficial da tocha: ÚNICA e central (sem override por nível).
+          expect(cresset.color).toBe(LIGHTING_CONFIG.torchColor)
+          expect(cresset.intensity).toBe(LIGHTING_CONFIG.torchIntensity)
+          expect(cresset.distance).toBe(LIGHTING_CONFIG.torchDistance)
+          expect(cresset.decay).toBe(LIGHTING_CONFIG.torchDecay)
+          expect(cresset.flameHeight).toBe(LIGHTING_CONFIG.torchFlameHeight)
+          expect(cresset.lightHeight).toBe(LIGHTING_CONFIG.torchLightHeight)
+        }
       }
     }
   })
