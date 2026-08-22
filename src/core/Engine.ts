@@ -1472,7 +1472,7 @@ export class Engine {
         const current = this.collision.getCurrentFloor()
         const next = floors.find(floor => floor.id !== current) ?? floors[0]
         this.collision.setCurrentFloor(next.id)
-        useGameStore.setState({ floorId: next.id })
+        useGameStore.setState({ floorId: next.id, floorName: next.name })
         if (this.player) {
           this.player.position.y = next.height + PLAYER_CONFIG.eyeHeight
         }
@@ -1613,7 +1613,7 @@ export class Engine {
     if (!floor) return
     this.collision.setCurrentFloor(stair.targetFloorId)
     this.player.position.set(stair.targetX, floor.height + PLAYER_CONFIG.eyeHeight, stair.targetZ)
-    useGameStore.setState({ floorId: stair.targetFloorId })
+    useGameStore.setState({ floorId: stair.targetFloorId, floorName: floor.name })
     this.audio.play('door')
     useGameStore.getState().setInteractableStair(null)
     console.log(`[stair] ${stair.id}: ${stair.floorId} -> ${stair.targetFloorId}`)
@@ -1796,7 +1796,8 @@ export class Engine {
     const savedFloorId = custom ? undefined : loadGame()?.floorId
     const spawnFloorId = resolveSpawnFloorId(definition, savedFloorId)
     this.collision.setCurrentFloor(spawnFloorId)
-    useGameStore.setState({ floorId: spawnFloorId })
+    const spawnFloor = parsed.floors?.find(f => f.id === spawnFloorId)
+    useGameStore.setState({ floorId: spawnFloorId, floorName: spawnFloor?.name ?? '' })
 
     // Reaproveita a malha estática (paredes/chão/teto) já gerada para este nível.
     const groupKey = definition.id
@@ -2013,9 +2014,9 @@ export class Engine {
     // Spawn no marcador 'P' do andar de spawn (fallback: P do andar inicial),
     // na altura daquele andar — senão o jogador nasceria "no ar" ao continuar
     // um checkpoint de andar elevado.
-    const spawnFloor = parsed.floors?.find(floor => floor.id === spawnFloorId)
-    this.player.spawn(spawnFloor?.playerSpawn ?? parsed.playerSpawn)
-    this.player.position.y = (spawnFloor?.height ?? 0) + PLAYER_CONFIG.eyeHeight
+    const spawnFloorInfo = parsed.floors?.find(floor => floor.id === spawnFloorId)
+    this.player.spawn(spawnFloorInfo?.playerSpawn ?? parsed.playerSpawn)
+    this.player.position.y = (spawnFloorInfo?.height ?? 0) + PLAYER_CONFIG.eyeHeight
     this.currentParsed = parsed
     this.currentLevelId = levelId
 

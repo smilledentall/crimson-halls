@@ -258,6 +258,11 @@ body {
   text-transform: uppercase;
 }
 
+.hud-floor {
+  color: #c08a9a;
+  font-weight: 600;
+}
+
 .flashlight-indicator {
   position: absolute;
   top: 44px;

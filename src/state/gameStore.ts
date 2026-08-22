@@ -30,6 +30,8 @@ export interface GameStore {
   levelName: string
   /** Andar atual do jogador (multi-andar). '' = andar único (legado). */
   floorId: string
+  /** Nome do andar atual (ex.: 'Térreo', '1º Andar') para HUD. */
+  floorName: string
   health: number
   kills: number
   currentWeaponId: WeaponId
@@ -122,6 +124,7 @@ export interface GameStore {
   dismissEpilogue: () => void
   setVictoryAvailable: (available: boolean) => void
   setFlashlightState: (enabled: boolean) => void
+  setFloorName: (name: string) => void
 
     // Escudo temporário.
     activateShield: () => void
@@ -218,6 +221,7 @@ export const useGameStore = create<GameStore>(set => {
     levelId: 'level-1',
     levelName: LEVELS_BY_ID['level-1'].name,
     floorId: '',
+    floorName: '',
     health: PLAYER_CONFIG.maxHealth,
     kills: 0,
     currentWeaponId: 'pistol',
@@ -350,7 +354,8 @@ export const useGameStore = create<GameStore>(set => {
         phase: 'playing',
         levelId: 'level-1',
         levelName: LEVELS_BY_ID['level-1'].name,
-        floorId: '',
+floorId: '',
+    floorName: '',
         health: PLAYER_CONFIG.maxHealth,
         kills: 0,
         currentWeaponId: 'pistol',
@@ -437,6 +442,7 @@ export const useGameStore = create<GameStore>(set => {
     },
     setVictoryAvailable: available => set({ victoryAvailable: available }),
     setFlashlightState: enabled => set({ flashlightEnabled: enabled }),
+    setFloorName: name => set({ floorName: name }),
 
     enterDoor: targetLevelId =>
       set(state => {

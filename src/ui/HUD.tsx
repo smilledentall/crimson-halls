@@ -19,6 +19,8 @@ export function HUD() {
   const ammo = useGameStore(state => state.ammo)
   const levelName = useGameStore(state => state.levelName)
   const levelId = useGameStore(state => state.levelId)
+  const floorId = useGameStore(state => state.floorId)
+  const floorName = useGameStore(state => state.floorName)
   const interactableDoor = useGameStore(state => state.interactableDoor)
   const interactableLever = useGameStore(state => state.interactableLever)
   const interactableStair = useGameStore(state => state.interactableStair)
@@ -92,6 +94,7 @@ export function HUD() {
       <div className="hud-level">
         {campaignLabel}
         {levelName}
+        {floorId && floorName && <span className="hud-floor"> — {floorName}</span>}
       </div>
 
       <div className={`flashlight-indicator${flashlightEnabled ? ' on' : ' off'}`}>
